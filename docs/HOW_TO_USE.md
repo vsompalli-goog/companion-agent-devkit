@@ -8,7 +8,7 @@ This guide walks **Google Forward Deployed Engineers (FDEs)** and **Customer Eng
 
 ### Requirements
 - **Python**: `3.10+`
-- **GCP Authentication** *(only required when interacting with a live GCP project)*:
+- **GCP Authentication** *(only required when interacting with a live GCP project for `export`, `eval --live`, or `voice-synth`/`voice-replay`)*:
   ```bash
   gcloud auth application-default login
   ```
@@ -25,7 +25,7 @@ pip install -e ".[dev]"
 aa-devkit --help
 ```
 
-> **Stateless Guarantee**: Every `aa-devkit` command operates strictly on local JSON folders or `.zip` files. Git repository initialization, commits, branch management, approvals, and rollbacks remain completely under your own Git/CI workflow.
+> **Stateless & Zero-Deploy Boundary**: Every `aa-devkit` command operates strictly on local JSON folders or `.zip` files without modifying deployed Companion Agent configurations. Configuration deployment, Git repository versioning (`git diff` / `git commit`), PR approvals, IAM write grants, and rollbacks (`git revert`) remain completely under your own Git/CI/CD workflow.
 
 ---
 
@@ -96,30 +96,15 @@ aa-devkit export \
 # Print prioritized Markdown report (P0 / P1 / P2)
 aa-devkit review ./companion_agent_bundle.zip
 
-# Return exit code 1 if any P0 critical blocker exists (CI gate)
+# Return exit code 1 if any P0 critical blocker exists (use as a pre-deploy CI gate)
 aa-devkit review ./companion_agent_bundle.zip --format json --fail-on-p0
 ```
 
 ---
 
-## 4. Milestone L3: Stateless Deployment, CLI Evals, Voice Testing & Latency (`Sections 7.4 – 7.7`)
+## 4. Milestone L3: CLI Evals, Voice Testing & Latency (`Sections 7.5 – 7.7`)
 
-### 4.1 Stateless Dry-Run Diff & Audited Deployment (`FR-3.1` – `FR-3.3`, `FR-4.4`)
-
-Preview exact unified JSON diffs before writing, and enforce deterministic P0 validation, explicit human confirmation (`--confirm`), and Cloud Audit Logging (`X-Goog-Request-Reason` via `--change-ticket`):
-
-```bash
-# 1. Dry-run diff against another local bundle or live GCP project (FR-3.2)
-aa-devkit diff ./candidate_bundle/ --target-bundle ./companion_agent_bundle/
-
-# 2. Audited stateless apply to staging or prod (FR-3.1, FR-3.3, FR-4.4)
-aa-devkit apply ./candidate_bundle/ \
-  --env staging \
-  --change-ticket "b/123456789-companion-rollout" \
-  --confirm
-```
-
-### 4.2 Turn-by-Turn CLI Evaluation Pipeline (`FR-4.1`, `FR-4.2`)
+### 4.1 Turn-by-Turn CLI Evaluation Pipeline (`FR-4.1`, `FR-4.2`)
 
 Score multi-turn conversations against expected guidance cards, tool calls, tool parameters, and negative suppression (`must_suppress: true` on greetings/filler turns):
 
@@ -133,7 +118,7 @@ aa-devkit eval ./customer_eval_set.json \
   --profile "projects/my-customer-project/locations/global/conversationProfiles/my-profile-id"
 ```
 
-### 4.3 Voice Testing Environment: Stock-Voice TTS & Streaming Replay (`FR-5.1` – `FR-5.3`)
+### 4.2 Voice Testing Environment: Stock-Voice TTS & Streaming Replay (`FR-5.1` – `FR-5.3`)
 
 Synthesize WAV audio turns from transcripts using **approved stock Google Cloud TTS voices only** (voice cloning is strictly prohibited per `FR-5.1`; every artifact is tagged `"derivedFromCustomerData": true`) and replay them with per-customer codec, chunk size, cadence, and jitter settings:
 
@@ -156,7 +141,7 @@ aa-devkit voice-replay ./synth_voice_bundle \
   --simulate-pacing
 ```
 
-### 4.4 6-Stage Call Latency Breakdown & Observability (`FR-6.1` – `FR-6.4`)
+### 4.3 6-Stage Call Latency Breakdown & Observability (`FR-6.1` – `FR-6.4`)
 
 Generate per-call and aggregate latency distributions (`p50`, `p90`, `p95`, `p99`, `max`) across all 6 canonical call stages (`customer_integration_network`, `ui_bridge`, `speech_endpointing_stt`, `llm_generation_vertex`, `tool_execution`, `quota_throttling`), automatically merging API `observabilityMetrics` when present:
 
@@ -174,7 +159,7 @@ aa-devkit latency-report evals/samples/sample_eval_conversations.json \
 
 ## 5. Milestone L4: Eval-Driven Hill-Climbing Iteration (`FR-7.1` – `FR-7.3`)
 
-Run a customer-project-scoped (`PRIV-13`) evaluation and optimization loop that always estimates Vertex AI token/USD cost first (`FR-7.2`), clusters evaluation failures into actionable loss patterns (`FALSE_POSITIVE_TRIGGER`, `MISSED_GUIDANCE_CARD`, `MISSED_TOOL_CALL`, `TOOL_PARAMETER_MISMATCH`), and writes a candidate bundle for human review:
+Run a customer-project-scoped (`PRIV-13`) evaluation and optimization loop that always estimates Vertex AI token/USD cost first (`FR-7.2`), clusters evaluation failures into actionable loss patterns (`FALSE_POSITIVE_TRIGGER`, `MISSED_GUIDANCE_CARD`, `MISSED_TOOL_CALL`, `TOOL_PARAMETER_MISMATCH`), and writes a candidate bundle for human review and deployment via your Git/CI/CD pipeline:
 
 ```bash
 # 1. Pre-run Vertex AI token & USD cost estimate only (FR-7.2)
@@ -189,4 +174,7 @@ aa-devkit hillclimb \
   --bundle ./companion_agent_bundle/ \
   --dataset evals/samples/sample_eval_conversations.json \
   --candidate-output ./candidate_bundle/
+
+# 3. Validate candidate bundle before deploying through your Git/CI pipeline
+aa-devkit review ./candidate_bundle/ --fail-on-p0
 ```

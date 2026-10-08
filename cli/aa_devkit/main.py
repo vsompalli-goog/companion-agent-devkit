@@ -9,11 +9,6 @@ import sys
 from typing import Any, Optional
 
 from aa_devkit.client import CompanionAgentRestClient, parse_resource_path
-from aa_devkit.deployer import (
-    apply_local_bundle,
-    compute_bundle_diff,
-    format_diff_report,
-)
 from aa_devkit.eval_pipeline import evaluate_dataset, format_eval_markdown
 from aa_devkit.exporter import load_export_bundle, write_export_bundle
 from aa_devkit.hillclimb import (
@@ -41,20 +36,6 @@ from aa_devkit.voice_tester import (
     replay_voice_manifest,
     synthesize_transcript_audio,
 )
-
-
-def _infer_project_and_location_from_bundle(
-    bundle: dict[str, Any],
-    project_arg: Optional[str],
-    location_arg: Optional[str],
-) -> tuple[str, str]:
-    prof_name = (bundle.get("conversation_profile") or {}).get("name") or ""
-    agent_name = (bundle.get("companion_agent") or {}).get("name") or ""
-    primary_ref = prof_name or agent_name
-    inferred_project, inferred_loc, _ = parse_resource_path(primary_ref) if primary_ref else ("", "", "")
-    project_id = project_arg or inferred_project or (bundle.get("manifest") or {}).get("projectId") or ""
-    location = location_arg or inferred_loc or (bundle.get("manifest") or {}).get("location") or "global"
-    return project_id, location
 
 
 def _write_or_print(output_text: str, output_path: Optional[str]) -> None:
@@ -166,98 +147,6 @@ def _cmd_review(args: argparse.Namespace) -> int:
 
     if args.fail_on_p0 and any(f.severity == "P0" for f in findings):
         return 1
-    return 0
-
-
-def _cmd_diff(args: argparse.Namespace) -> int:
-    local_bundle = load_export_bundle(args.bundle)
-    if args.target_bundle:
-        target_bundle = load_export_bundle(args.target_bundle)
-    else:
-        project_id, location = _infer_project_and_location_from_bundle(
-            local_bundle, args.project, args.location
-        )
-        if not project_id:
-            print(
-                "Error: Could not infer GCP project ID for remote diff; pass --project or --target-bundle.",
-                file=sys.stderr,
-            )
-            return 2
-        client = CompanionAgentRestClient(
-            project_id=project_id,
-            location=location,
-            environment=args.env,
-            quota_project_id=args.quota_project or project_id,
-        )
-        prof_name = (local_bundle.get("conversation_profile") or {}).get("name")
-        agent_name = (local_bundle.get("companion_agent") or {}).get("name")
-        target_bundle = client.harvest_configuration_graph(
-            profile_name=prof_name,
-            companion_agent_name=agent_name,
-            include_tools=True,
-        )
-
-    diff_result = compute_bundle_diff(local_bundle, target_bundle)
-    if args.format == "json":
-        output_text = json.dumps(diff_result, indent=2) + "\n"
-    else:
-        output_text = format_diff_report(diff_result)
-    _write_or_print(output_text, args.output)
-    return 0
-
-
-def _cmd_apply(args: argparse.Namespace) -> int:
-    local_bundle = load_export_bundle(args.bundle)
-
-    # 1. Enforce deterministic P0 validation before deployment (FR-3.1)
-    findings = review_bundle(local_bundle)
-    p0_findings = [f for f in findings if f.severity == "P0"]
-    if p0_findings and not args.skip_p0_gate:
-        print(
-            f"Error: Blocked deployment due to {len(p0_findings)} P0 critical configuration finding(s):",
-            file=sys.stderr,
-        )
-        for f in p0_findings:
-            print(f"  - [{f.rule_id}] {f.title} ({f.location})", file=sys.stderr)
-        return 1
-
-    # 2. Enforce explicit human confirmation (FR-3.3)
-    if not args.confirm:
-        print(
-            "Error: Stateless deployment requires explicit human approval via --confirm "
-            "and a change reference via --change-ticket (FR-3.3, FR-4.4).",
-            file=sys.stderr,
-        )
-        return 2
-
-    project_id, location = _infer_project_and_location_from_bundle(
-        local_bundle, args.project, args.location
-    )
-    if not project_id:
-        print(
-            "Error: Could not infer GCP project ID from local bundle; pass --project explicitly.",
-            file=sys.stderr,
-        )
-        return 2
-
-    client = CompanionAgentRestClient(
-        project_id=project_id,
-        location=location,
-        environment=args.env,
-        quota_project_id=args.quota_project or project_id,
-        request_reason=args.change_ticket,
-    )
-    result = apply_local_bundle(
-        client=client,
-        local_bundle=local_bundle,
-        change_ticket=args.change_ticket,
-    )
-    print(
-        f"Applied {result['applied_count']} resource(s) to project '{project_id}' "
-        f"(audit ticket: {result['change_ticket']}):"
-    )
-    for res in result["applied_resources"]:
-        print(f"  - [{res['action']}] {res['type']}: {res['name']}")
     return 0
 
 
@@ -501,47 +390,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Return exit code 1 if any P0 critical blocker is found.",
     )
     p_review.set_defaults(func=_cmd_review)
-
-    # diff (FR-3.2)
-    p_diff = subparsers.add_parser(
-        "diff",
-        help="Stateless dry-run diff between a local bundle and a target bundle or live GCP project (FR-3.2).",
-    )
-    p_diff.add_argument("bundle", help="Path to candidate local bundle folder or .zip.")
-    p_diff.add_argument(
-        "--target-bundle",
-        help="Optional baseline local bundle folder or .zip (if omitted, diffs against live GCP project).",
-    )
-    p_diff.add_argument("--project", help="Optional GCP project ID override for live remote diff.")
-    p_diff.add_argument("--location", help="Optional GCP location override.")
-    p_diff.add_argument("--quota-project", help="Optional X-Goog-User-Project override.")
-    p_diff.add_argument("--env", choices=["prod", "staging"], default="prod")
-    p_diff.add_argument("--format", choices=["text", "json"], default="text")
-    p_diff.add_argument("--output", help="Optional file path to write diff output.")
-    p_diff.set_defaults(func=_cmd_diff)
-
-    # apply (FR-3.1, FR-3.2, FR-3.3, FR-4.4)
-    p_apply = subparsers.add_parser(
-        "apply",
-        help="Stateless audited deployment of local bundle to Dialogflow/CES with human approval gate (FR-3.1, FR-3.3, FR-4.4).",
-    )
-    p_apply.add_argument("bundle", help="Path to local configuration bundle folder or .zip.")
-    p_apply.add_argument(
-        "--change-ticket",
-        required=True,
-        help="Change ticket / instruction reference attached to Cloud Audit Logs via X-Goog-Request-Reason (FR-4.4).",
-    )
-    p_apply.add_argument(
-        "--confirm",
-        action="store_true",
-        help="Mandatory human confirmation flag required to execute REST write calls (FR-3.3).",
-    )
-    p_apply.add_argument("--skip-p0-gate", action="store_true", help="Bypass P0 config validation blocker.")
-    p_apply.add_argument("--project", help="Optional GCP project ID override.")
-    p_apply.add_argument("--location", help="Optional GCP location override.")
-    p_apply.add_argument("--quota-project", help="Optional X-Goog-User-Project override.")
-    p_apply.add_argument("--env", choices=["prod", "staging"], default="prod")
-    p_apply.set_defaults(func=_cmd_apply)
 
     # eval (FR-4.1, FR-4.2)
     p_eval = subparsers.add_parser(

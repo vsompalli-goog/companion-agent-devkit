@@ -1,6 +1,6 @@
 # Agent Assist Companion Agent DevKit (`aa-dev-kit`)
 
-`aa-dev-kit` packages Google Cloud Contact Center AI (CCAI) **Companion Agent** engineering best practices, decision guides, AI Coach / PGKA migration tools, workflow/UI concurrency samples, and stateless configuration export, review, deployment, evaluation, voice testing, latency observability, and hill-climbing tools for AI coding agents (Jetski `.agent` and Claude Code `.claude`).
+`aa-dev-kit` packages Google Cloud Contact Center AI (CCAI) **Companion Agent** engineering best practices, decision guides, AI Coach / PGKA migration tools, workflow/UI concurrency samples, and stateless configuration export, review, evaluation, voice testing, latency observability, and hill-climbing tools for AI coding agents (Jetski `.agent` and Claude Code `.claude`).
 
 > **Privacy Boundary**: Customer data never goes into this kit. Anything that touches customer data runs in the customer's project or local workspace by default (`PRIV-13`). Third-party AI packages (such as `.claude`) are strictly for customers' own use — Google staff must never load customer data into third-party AI tools.
 
@@ -12,10 +12,10 @@
 | :--- | :--- | :--- |
 | **L1: Best-Practice Skills Pack** (`7.2`) | Authoring rules, reactive vs. proactive & tool-type decision guides, AI Coach/PGKA migration, Workflow/AnswerRecord APIs, UI concurrency bridge, and golden-question regression suite | `pack/rules/companion-agent-guardrails.md`, `pack/skills/aa-companion-architect/`, `pack/skills/aa-migration/`, `aa-devkit install-pack`, `aa-devkit migrate-coach`, `aa-devkit eval-skills` (`FR-1.1` – `FR-1.5`) |
 | **L2: Config Export & Review** (`7.3`) | Stateless export of Conversation Profile + Companion Agent + Workflows + CES/Dialogflow Tools to local folder/zip, plus deterministic & AI-assisted best-practice review | `aa-devkit export`, `aa-devkit review`, `pack/skills/aa-config-review/` (`FR-2.1`, `FR-2.2`) |
-| **L3: Stateless Deployment, Eval Pipeline, Voice Testing & Latency** (`7.4` – `7.7`) | Stateless dry-run diff & audited deployment (`X-Goog-Request-Reason`), turn-by-turn evaluation pipeline, stock-voice TTS synthesis & streaming replay, and 6-stage call latency taxonomy/dashboards | `aa-devkit diff`, `aa-devkit apply`, `aa-devkit eval`, `aa-devkit voice-synth`, `aa-devkit voice-replay`, `aa-devkit latency-report` (`FR-3.1` – `FR-6.4`) |
+| **L3: Eval Pipeline, Voice Testing & Latency** (`7.5` – `7.7`) | Turn-by-turn evaluation pipeline, stock-voice TTS synthesis & streaming replay, and 6-stage call latency taxonomy/dashboards | `aa-devkit eval`, `aa-devkit voice-synth`, `aa-devkit voice-replay`, `aa-devkit latency-report` (`FR-4.1` – `FR-6.4`) |
 | **L4: Eval-Driven Hill-Climbing** (`7.8`) | Pre-run Vertex AI token/cost estimator, automated evaluation loss-pattern clustering, and local candidate bundle fix proposals in the customer's project (`PRIV-13`) | `aa-devkit hillclimb`, `pack/skills/aa-eval-hillclimb/` (`FR-7.1` – `FR-7.3`) |
 
-> **Stateless Design**: Every `aa-devkit` CLI command operates purely on local JSON directories and `.zip` archives. Git repository management, versioning, change approvals, and rollbacks are the responsibility of the DevKit user's own Git/CI workflow.
+> **Stateless & Zero-Deploy Boundary**: Every `aa-devkit` CLI command operates purely on local JSON directories and `.zip` archives without modifying live Companion Agent configurations. Configuration deployment, Git repository versioning, PR approvals, IAM write grants, and rollbacks belong exclusively to the DevKit user's own Git/CI/CD workflow.
 
 ---
 
@@ -48,7 +48,7 @@ aa-devkit eval-skills
 aa-devkit migrate-coach ./legacy_ai_coach_generator.json --output ./migrated_companion_agent.json
 ```
 
-### 4. Export, Review, Diff & Audited Apply (`FR-2.1` – `FR-3.3`, `FR-4.4`)
+### 4. Export & Review Configurations (`FR-2.1`, `FR-2.2`)
 
 ```bash
 # Export full graph to a local folder or .zip archive
@@ -56,16 +56,8 @@ aa-devkit export \
   --profile "projects/my-gcp-project/locations/global/conversationProfiles/my-profile-id" \
   --output ./my_agent_bundle.zip
 
-# Run deterministic P0/P1/P2 best-practice review
+# Run deterministic P0/P1/P2 best-practice review (use --fail-on-p0 as a CI gate)
 aa-devkit review ./my_agent_bundle.zip --fail-on-p0
-
-# Stateless dry-run diff against live GCP project (or --target-bundle)
-aa-devkit diff ./my_agent_bundle/
-
-# Audited deployment with mandatory human confirmation & Cloud Audit Logging ticket
-aa-devkit apply ./my_agent_bundle/ \
-  --change-ticket "b/123456789-rollout" \
-  --confirm
 ```
 
 ### 5. Run Evaluations, Voice Testing, Latency Reports & Hill-Climbing (`FR-4.1` – `FR-7.3`)
@@ -96,12 +88,11 @@ aa-devkit hillclimb \
 ```text
 companion-agent-devkit/
 ├── cli/aa_devkit/
-│   ├── client.py          # Pure REST v2beta1 (Dialogflow) + v1beta (CES) client with X-Goog-Request-Reason
+│   ├── client.py          # Pure REST v2beta1 (Dialogflow) + v1beta (CES) client
 │   ├── exporter.py        # Stateless graph exporter to folder or .zip (FR-2.1)
 │   ├── reviewer.py        # Deterministic P0/P1/P2 config linter (FR-2.2)
 │   ├── migrator.py        # AI Coach & PGKA -> Companion Agent converter (FR-1.3)
 │   ├── skill_eval.py      # Golden-question regression suite runner (FR-1.5)
-│   ├── deployer.py        # Stateless dry-run diff & audited REST deployment (FR-3.1–3.3, FR-4.4)
 │   ├── eval_pipeline.py   # Turn-by-turn evaluation runner & scorer (FR-4.1, FR-4.2)
 │   ├── voice_tester.py    # Stock-voice TTS synthesizer & configurable streaming replay (FR-5.1–5.3)
 │   ├── latency.py         # 6-stage call latency taxonomy & HTML/Markdown reporter (FR-6.1–6.4)

@@ -245,7 +245,7 @@ def format_hillclimb_markdown(
             [
                 "",
                 f"Candidate bundle written to: `{candidate_dir}`",
-                "Review proposed changes with `aa-devkit diff` and `aa-devkit review` before applying.",
+                "Validate proposed changes with `aa-devkit review --fail-on-p0` and deploy through your Git/CI workflow.",
             ]
         )
     lines.append("")

@@ -116,7 +116,7 @@
       "skill": "aa-eval-hillclimb",
       "reference": "SKILL.md",
       "question": "What guardrails must be enforced before and during an L4 eval-driven hill-climbing iteration?",
-      "must_contain_concepts": ["estimate-only", "PRIV-13", "FALSE_POSITIVE_TRIGGER", "change-ticket"],
+      "must_contain_concepts": ["estimate-only", "PRIV-13", "FALSE_POSITIVE_TRIGGER", "fail-on-p0"],
       "must_reject_concepts": []
     }
   ]

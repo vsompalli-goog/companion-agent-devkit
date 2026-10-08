@@ -1,4 +1,4 @@
-"""Unit tests for FR-1.3, FR-1.5, and Sections 7.4 – 7.8 (L3 & L4)."""
+"""Unit tests for FR-1.3, FR-1.5, and Sections 7.5 – 7.8 (L3 & L4)."""
 
 from __future__ import annotations
 
@@ -7,11 +7,6 @@ from pathlib import Path
 from typing import Any
 import pytest
 
-from aa_devkit.deployer import (
-    apply_local_bundle,
-    compute_bundle_diff,
-    format_diff_report,
-)
 from aa_devkit.eval_pipeline import evaluate_dataset, score_single_turn
 from aa_devkit.hillclimb import (
     analyze_loss_patterns,
@@ -24,7 +19,6 @@ from aa_devkit.latency import (
     format_latency_html_dashboard,
     format_latency_markdown,
 )
-from aa_devkit.main import main
 from aa_devkit.migrator import migrate_ai_coach_to_companion_agent
 from aa_devkit.skill_eval import run_skill_regression_eval
 from aa_devkit.voice_tester import (
@@ -80,92 +74,6 @@ def test_skill_eval_golden_questions_pass() -> None:
     assert report["total"] >= 13
     assert report["failed"] == 0, f"Skill regression failures: {report['results']}"
     assert report["pass_rate_pct"] == 100.0
-
-
-def test_deployer_diff_and_audited_apply() -> None:
-    """Section 7.4 (FR-3.1, FR-3.2, FR-3.3, FR-4.4): Dry-run diff & audited deployment."""
-    baseline_bundle = {
-        "companion_agent": {
-            "name": "projects/p1/locations/global/companionAgents/ca-1",
-            "displayName": "Baseline Agent",
-            "skillConfigs": [],
-        },
-        "conversation_profile": {
-            "name": "projects/p1/locations/global/conversationProfiles/cp-1",
-            "displayName": "Baseline Profile",
-        },
-        "tools": [
-            {
-                "name": "projects/p1/locations/global/apps/app-1/tools/t-1",
-                "displayName": "lookup_order",
-                "pythonFunction": {"name": "lookup_order", "pythonCode": "def lookup_order(order_id: str) -> dict:\n    return {}"},
-            }
-        ],
-    }
-    local_bundle = {
-        "companion_agent": {
-            "name": "projects/p1/locations/global/companionAgents/ca-1",
-            "displayName": "Updated Agent v2",
-            "skillConfigs": [],
-        },
-        "conversation_profile": baseline_bundle["conversation_profile"],
-        "tools": baseline_bundle["tools"],
-    }
-
-    diff_res = compute_bundle_diff(local_bundle, baseline_bundle)
-    assert diff_res["has_changes"] is True
-    assert diff_res["changed_count"] == 1
-    assert "Updated Agent v2" in format_diff_report(diff_res)
-
-    recorded_calls: list[dict[str, Any]] = []
-
-    class FakeClient:
-        project_id = "p1"
-        location = "global"
-
-        def _get_ces_base_urls(self) -> list[str]:
-            return ["https://ces.googleapis.com/v1beta"]
-
-        def request(
-            self,
-            method: str,
-            path_or_url: str,
-            json_body: Any = None,
-            params: Any = None,
-            timeout: int = 30,
-            request_reason: str | None = None,
-        ) -> dict[str, Any]:
-            recorded_calls.append(
-                {
-                    "method": method,
-                    "url": path_or_url,
-                    "reason": request_reason,
-                    "params": params,
-                }
-            )
-            return {"name": path_or_url}
-
-    apply_res = apply_local_bundle(
-        client=FakeClient(),  # type: ignore[arg-type]
-        local_bundle=local_bundle,
-        change_ticket="b/987654321-deploy",
-    )
-    assert apply_res["applied_count"] == 3
-    assert apply_res["change_ticket"] == "b/987654321-deploy"
-    # Verify FR-4.4 Cloud Audit Logging request_reason on every REST write call
-    patch_calls = [c for c in recorded_calls if c["method"] == "PATCH"]
-    assert len(patch_calls) == 3
-    assert all(c["reason"] == "b/987654321-deploy" for c in patch_calls)
-
-
-def test_apply_cli_blocks_without_confirm(tmp_path: Path) -> None:
-    """FR-3.3: CLI apply blocks when --confirm is omitted."""
-    # Write minimal valid bundle without P0 issues
-    bundle_dir = tmp_path / "valid_bundle"
-    bundle_dir.mkdir()
-    (bundle_dir / "manifest.json").write_text('{"projectId": "p1", "location": "global"}', encoding="utf-8")
-    rc = main(["apply", str(bundle_dir), "--change-ticket", "b/111", "--skip-p0-gate"])
-    assert rc == 2
 
 
 def test_eval_pipeline_scoring_and_dataset() -> None:
