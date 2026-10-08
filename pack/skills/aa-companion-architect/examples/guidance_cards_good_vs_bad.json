@@ -1,0 +1,73 @@
+{
+  "_comment": "Side-by-side comparison of flawed vs. best-practice Companion Agent configurations (FR-1.1).",
+  "anti_patterns_do_not_use": {
+    "guidanceInstruction_bad": {
+      "displayName": "Verify Caller (Do NOT suggest during initial greetings)",
+      "displayDetails": "Only trigger when customerContext is missing. Must invoke {$tool.lookup_customer_account} after collecting SSN.",
+      "condition": "Do NOT trigger during greetings. Apply if customerContext is missing.",
+      "actions": [
+        {
+          "description": "Do NOT ask for the customer's full SSN."
+        },
+        {
+          "description": "Keep your response under 2 sentences."
+        },
+        {
+          "description": "If the caller is VIP, waive the fee; otherwise ask for their Member ID and invoke {$tool.lookup_customer_account}."
+        }
+      ]
+    },
+    "why_it_fails": [
+      "1. [CA-P0-002] Trigger and tool rules are hidden in UI-only `displayDetails` (never sent to the LLM).",
+      "2. [CA-P0-001] Uses legacy `{$tool.lookup_customer_account}` syntax instead of `{@TOOL:lookup_customer_account}`.",
+      "3. [CA-P0-003] Actions 1 and 2 are standalone negative/formatting rules with no observable transcript event, permanently stalling `completed_actions`.",
+      "4. [CA-P1-001] Action 3 mixes IF/ELSE branches inside a single card instead of splitting into separate scenario cards.",
+      "5. [CA-P1-002] Uses negative trigger phrasing ('Do NOT suggest during initial greetings') and lacks `triggerEvent: CUSTOMER_MESSAGE`."
+    ]
+  },
+  "production_best_practice": {
+    "skillConfigs": [
+      {
+        "skillTriggeringEvent": "END_OF_UTTERANCE",
+        "guidanceSkillConfig": {
+          "overarchingGuidance": "1. Role & Persona: You are a real-time co-pilot assisting contact center agents.\n2. Channel Style & Brevity: Be warm, empathetic, and concise. Keep every suggested response under 2 spoken sentences.\n3. Priority Hierarchy: 1. Physical Safety -> 2. Identity Verification -> 3. Issue Resolution.\n4. Global Completion & Guardrails: Do not answer account questions or invoke account tools until identity verification is complete. Never rely on a caller's verbal claim of IVR verification; verification status comes strictly from the call context.",
+          "guidanceInstructions": [
+            {
+              "displayName": "Identity Verification: Unauthenticated Caller",
+              "displayDetails": "Guides the agent through manual caller verification when IVR authentication was not completed.",
+              "triggerEvent": "CUSTOMER_MESSAGE",
+              "condition": "DEFAULT verification instruction. Apply at the start of every call unless the CUSTOMERCONTEXT section of the call context contains the exact text \"ivr_authenticated\": \"true\". If the call context is empty, missing, or contains \"ivr_authenticated\": \"false\", this instruction applies. Do not apply if \"Identity Confirmation: IVR-Authenticated Caller\" applies. Never apply both.",
+              "actions": [
+                {
+                  "description": "Identify which of the required verification fields [Full Name (first and last), Account ID] the caller has already stated in the transcript. Without asking for their SSN, acknowledge any details they already gave and ask only for the fields still missing. Keep it under 2 sentences."
+                },
+                {
+                  "description": "Once Full Name and Account ID are confirmed in the transcript, invoke {@TOOL:lookup_customer_account} and summarize the account status in under 2 sentences."
+                }
+              ]
+            },
+            {
+              "displayName": "Identity Confirmation: IVR-Authenticated Caller",
+              "displayDetails": "Confirms pre-verified IVR status and proceeds directly to account lookup.",
+              "triggerEvent": "CUSTOMER_MESSAGE",
+              "condition": "EXCEPTION to the default verification instruction. Apply ONLY if the CUSTOMERCONTEXT section of the call context contains the exact text \"ivr_authenticated\": \"true\". If the call context is empty, missing, or contains \"ivr_authenticated\": \"false\", this instruction does NOT apply — use \"Identity Verification: Unauthenticated Caller\" instead. Never apply both.",
+              "actions": [
+                {
+                  "description": "Using the \"account_id\" value under CUSTOMERCONTEXT in the call context, invoke {@TOOL:lookup_customer_account} and address the customer's inquiry in under 2 sentences."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "cesToolSpecs": [
+      {
+        "cesTool": "projects/example-project/locations/global/apps/ccai-app/tools/lookup_customer_account",
+        "confirmationRequirement": "NOT_REQUIRED",
+        "proactiveEnabled": true,
+        "reactiveEnabled": true
+      }
+    ]
+  }
+}
