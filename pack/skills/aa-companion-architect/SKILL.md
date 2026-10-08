@@ -28,6 +28,9 @@ Read only the reference file(s) needed for your immediate task:
      - Concurrency & race handling on the UI side (`<agent-assist-companion-agent>` + `UiModulesConnector`)
    - Reference [examples/workflow_api_samples.py](examples/workflow_api_samples.py) for pure REST Python client calls and [examples/ui_concurrency_bridge_sample.js](examples/ui_concurrency_bridge_sample.js) for UI Module deduplication and fallback handling.
 
+4. **Latency Breakdown & Observability Taxonomy (`FR-6.1` – `FR-6.4`)**:
+   - Read [references/latency_taxonomy.md](references/latency_taxonomy.md) when classifying Companion Agent call latency across the 6 canonical spans (client-side integration/UI vs. backend STT/LLM/tool/quota metrics) or interpreting `aa-devkit latency-report` outputs.
+
 ## Quick Authoring Checklist
 
 Before delivering any Companion Agent JSON or prompt configuration, verify:

@@ -116,6 +116,7 @@ class CompanionAgentRestClient:
         json_body: Optional[dict[str, Any]] = None,
         params: Optional[dict[str, Any]] = None,
         timeout: int = 30,
+        request_reason: Optional[str] = None,
     ) -> dict[str, Any]:
         """Executes an authenticated REST request against Dialogflow v2beta1 or CES v1beta."""
         self._refresh_if_needed()
@@ -128,6 +129,9 @@ class CompanionAgentRestClient:
             "Content-Type": "application/json",
             "X-Goog-User-Project": self.quota_project_id,
         }
+        if request_reason:
+            headers["X-Goog-Request-Reason"] = str(request_reason).strip()
+
         response = self.session.request(
             method=method,
             url=url,

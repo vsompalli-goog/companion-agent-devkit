@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CompanionAgentEvalDataset",
+  "description": "Standard turn-by-turn evaluation dataset format for Agent Assist Companion Agent DevKit (FR-4.2).",
+  "type": "object",
+  "required": ["schemaVersion", "conversations"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "description": { "type": "string" },
+    "conversations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["conversation_id", "turns"],
+        "properties": {
+          "conversation_id": { "type": "string" },
+          "description": { "type": "string" },
+          "ingested_context": {
+            "type": "object",
+            "additionalProperties": { "type": "object" }
+          },
+          "turns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["turn_id", "role", "text"],
+              "properties": {
+                "turn_id": { "type": "integer", "minimum": 1 },
+                "role": { "type": "string", "enum": ["END_USER", "HUMAN_AGENT"] },
+                "text": { "type": "string" },
+                "expected": {
+                  "type": "object",
+                  "properties": {
+                    "expected_guidance_cards": { "type": "array", "items": { "type": "string" } },
+                    "expected_tools": { "type": "array", "items": { "type": "string" } },
+                    "expected_entities": { "type": "object" },
+                    "not_expected_entities": { "type": "object" },
+                    "expected_workflow": { "type": "string" },
+                    "must_suppress": { "type": "boolean" }
+                  }
+                },
+                "actual_response": {
+                  "type": "object",
+                  "description": "Optional pre-recorded AnalyzeContentResponse for offline evaluation."
+                },
+                "latency_spans_ms": {
+                  "type": "object",
+                  "description": "Optional per-span latency timings in milliseconds (FR-6.1)."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

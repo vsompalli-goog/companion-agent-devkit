@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "1.0",
+  "description": "Synthetic sample turn-by-turn evaluation dataset for Companion Agent (zero customer data).",
+  "conversations": [
+    {
+      "conversation_id": "conv-billing-001",
+      "description": "Agent greeting suppression followed by unauthenticated caller verification and account lookup.",
+      "ingested_context": {
+        "customerContext": {
+          "ivr_authenticated": "false"
+        }
+      },
+      "turns": [
+        {
+          "turn_id": 1,
+          "role": "HUMAN_AGENT",
+          "text": "Thank you for calling support! How can I help you today?",
+          "expected": {
+            "must_suppress": true
+          },
+          "actual_response": {
+            "humanAgentSuggestionResults": []
+          },
+          "latency_spans_ms": {
+            "customer_integration_network": 18,
+            "ui_bridge": 6,
+            "llm_generation_vertex": 310
+          }
+        },
+        {
+          "turn_id": 2,
+          "role": "END_USER",
+          "text": "Hi, my name is Jane Doe, account AC-90210, and I have a question about my bill.",
+          "expected": {
+            "expected_guidance_cards": ["Identity Verification: Unauthenticated Caller"],
+            "expected_tools": ["lookup_customer_account"],
+            "expected_entities": {
+              "account_id": "AC-90210",
+              "full_name": "Jane Doe"
+            }
+          },
+          "actual_response": {
+            "humanAgentSuggestionResults": [
+              {
+                "generateCompanionSuggestionsResponse": {
+                  "companionSuggestion": {
+                    "guidances": [
+                      {
+                        "instructionSource": {
+                          "displayName": "Identity Verification: Unauthenticated Caller"
+                        },
+                        "suggestedAction": "Invoke lookup_customer_account and summarize balance.",
+                        "toolCalls": [
+                          {
+                            "toolCallInfo": {
+                              "toolCall": {
+                                "toolDisplayName": "lookup_customer_account",
+                                "answerRecord": "projects/demo/locations/global/answerRecords/ar-1",
+                                "inputParameters": {
+                                  "account_id": "AC-90210",
+                                  "full_name": "Jane Doe"
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "latency_spans_ms": {
+            "customer_integration_network": 22,
+            "speech_endpointing_stt": 140,
+            "llm_generation_vertex": 680,
+            "tool_execution": 210,
+            "ui_bridge": 9
+          }
+        }
+      ]
+    }
+  ]
+}

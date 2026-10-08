@@ -1,0 +1,123 @@
+{
+  "schemaVersion": "1.0",
+  "description": "Golden-question regression test set for Agent Assist Companion Agent DevKit skills (FR-1.5).",
+  "questions": [
+    {
+      "id": "GQ-001",
+      "fr": "FR-1.1",
+      "skill": "aa-companion-architect",
+      "reference": "references/authoring_best_practices.md",
+      "question": "Can I put trigger rules or tool invocation instructions inside a GuidanceInstruction's displayDetails field?",
+      "must_contain_concepts": ["UI-only", "NEVER sent to the LLM", "condition", "actions"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-002",
+      "fr": "FR-1.1",
+      "skill": "aa-companion-architect",
+      "reference": "references/authoring_best_practices.md",
+      "question": "What syntax must I use to bind a tool inside a Companion Agent GuidanceInstruction action?",
+      "must_contain_concepts": ["{@TOOL:", "cesToolSpecs", "{$tool."],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-003",
+      "fr": "FR-1.1",
+      "skill": "aa-companion-architect",
+      "reference": "references/authoring_best_practices.md",
+      "question": "Why does putting 'Do NOT ask for SSN' or 'Keep response under 2 sentences' in its own standalone actions[] step stall my Companion Agent card?",
+      "must_contain_concepts": ["Checkpoint Rule", "completed_actions", "observable"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-004",
+      "fr": "FR-1.1",
+      "skill": "aa-companion-architect",
+      "reference": "references/authoring_best_practices.md",
+      "question": "How should I handle IF/ELSE branching inside a GuidanceInstruction card?",
+      "must_contain_concepts": ["One Scenario = One Card", "separate", "mutually exclusive"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-005",
+      "fr": "FR-1.1",
+      "skill": "aa-companion-architect",
+      "reference": "references/authoring_best_practices.md",
+      "question": "How should I write conditions for caller verification when <call_context> might be missing or arrive late?",
+      "must_contain_concepts": ["Pattern B", "DEFAULT", "EXCEPTION", "Attractor Phrases"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-006",
+      "fr": "FR-1.1",
+      "skill": "aa-companion-architect",
+      "reference": "references/authoring_best_practices.md",
+      "question": "Why did my caller intake card fire on Turn 1 when the human agent said 'Thank you for calling, how can I help?'",
+      "must_contain_concepts": ["END_OF_UTTERANCE", "CUSTOMER_MESSAGE", "triggerEvent"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-007",
+      "fr": "FR-1.2",
+      "skill": "aa-companion-architect",
+      "reference": "references/decision_guides.md",
+      "question": "When should I use a Reactive query ('Ask Assistant') vs. a Proactive suggestion in Companion Agent?",
+      "must_contain_concepts": ["proactiveEnabled", "reactiveEnabled", "streamCompanionReactiveQuestion", "END_OF_UTTERANCE"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-008",
+      "fr": "FR-1.2",
+      "skill": "aa-companion-architect",
+      "reference": "references/decision_guides.md",
+      "question": "Which tool type should I choose between MCP Tool, CES Python Tool, OpenAPI Tool, and Datastore Tool?",
+      "must_contain_concepts": ["pythonFunction", "openApiTool", "MCP Tool", "Datastore Tool", "Knowledge Assist"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-009",
+      "fr": "FR-1.3",
+      "skill": "aa-migration",
+      "reference": "references/ai_coach_and_pgka_migration.md",
+      "question": "What are the main schema and behavioral changes when migrating from AI Coach and PGKA to Companion Agent?",
+      "must_contain_concepts": ["agentCoachingContext", "guidanceSkillConfig", "displayDetails", "Knowledge Assist"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-010",
+      "fr": "FR-1.4",
+      "skill": "aa-companion-architect",
+      "reference": "references/workflow_api_and_ui_concurrency.md",
+      "question": "How do I confirm a NEEDS_CONFIRMATION tool call, update AnswerRecord feedback, and prevent duplicate :analyzeContent calls in the UI?",
+      "must_contain_concepts": ["suggestionInput", "answerRecord", "CONFIRM", "updateMask=answer_feedback", "2500"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-011",
+      "fr": "FR-2.2",
+      "skill": "aa-config-review",
+      "reference": "references/review_checklist.md",
+      "question": "What ConversationProfile settings must be checked during a Companion Agent configuration review?",
+      "must_contain_concepts": ["CONVERSATION_SUMMARIZATION", "queryConfig", "rewriter", "useGeminiAsr"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-012",
+      "fr": "FR-6.1",
+      "skill": "aa-companion-architect",
+      "reference": "references/latency_taxonomy.md",
+      "question": "What are the 6 canonical call stages in the Companion Agent latency taxonomy and how are client-side vs API metrics separated?",
+      "must_contain_concepts": ["customer_integration_network", "ui_bridge", "speech_endpointing_stt", "llm_generation_vertex", "tool_execution", "quota_throttling"],
+      "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-013",
+      "fr": "FR-7.1",
+      "skill": "aa-eval-hillclimb",
+      "reference": "SKILL.md",
+      "question": "What guardrails must be enforced before and during an L4 eval-driven hill-climbing iteration?",
+      "must_contain_concepts": ["estimate-only", "PRIV-13", "FALSE_POSITIVE_TRIGGER", "change-ticket"],
+      "must_reject_concepts": []
+    }
+  ]
+}
