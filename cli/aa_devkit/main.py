@@ -1,4 +1,4 @@
-"""Stateless CLI entrypoint (`aa-devkit`) for Companion Agent DevKit (L1 – L4)."""
+"""Stateless CLI entrypoint (`aa-devkit`) for Companion Agent DevKit (L1 – L4 + Simulator Suite)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,11 @@ import sys
 from typing import Any, Optional
 
 from aa_devkit.client import CompanionAgentRestClient, parse_resource_path
-from aa_devkit.eval_pipeline import evaluate_dataset, format_eval_markdown
+from aa_devkit.eval_pipeline import (
+    bootstrap_eval_dataset,
+    evaluate_dataset,
+    format_eval_markdown,
+)
 from aa_devkit.exporter import load_export_bundle, write_export_bundle
 from aa_devkit.hillclimb import (
     analyze_loss_patterns,
@@ -29,8 +33,19 @@ from aa_devkit.reviewer import (
     format_review_markdown,
     review_bundle,
 )
+from aa_devkit.scenario_generator import (
+    AGENT_STRATEGIES,
+    TONE_GUIDANCE,
+    VERBOSITY_GUIDANCE,
+    build_5d_persona_directive,
+    generate_scenarios_from_bundle,
+    init_5d_persona_state,
+    update_5d_persona_state,
+)
 from aa_devkit.skill_eval import run_skill_regression_eval
+from aa_devkit.transcript_importer import import_transcript_file
 from aa_devkit.voice_tester import (
+    ALLOWED_NOISE_PROFILES,
     ALLOWED_STOCK_VOICES,
     StreamingProfile,
     replay_voice_manifest,
@@ -150,6 +165,88 @@ def _cmd_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_import_transcript(args: argparse.Namespace) -> int:
+    dataset = import_transcript_file(
+        input_path=args.input,
+        conversation_id=args.conversation_id,
+        description=args.description,
+        agent_mode=args.agent_mode,
+        merge_consecutive=not args.no_merge_consecutive,
+        heal_pii=not args.no_heal_pii,
+    )
+    output_text = json.dumps(dataset, indent=2) + "\n"
+    _write_or_print(output_text, args.output)
+    return 0
+
+
+def _cmd_generate_scenarios(args: argparse.Namespace) -> int:
+    bundle = load_export_bundle(args.bundle)
+    dataset = generate_scenarios_from_bundle(
+        bundle=bundle,
+        count=args.count,
+        requested_turns=args.turns,
+        include_small_talk=not args.no_small_talk,
+        persona_tone=args.tone,
+        persona_tech_literacy=args.tech_literacy,
+        agent_strategy=args.agent_strategy,
+    )
+    output_text = json.dumps(dataset, indent=2) + "\n"
+    _write_or_print(output_text, args.output)
+    return 0
+
+
+def _cmd_bootstrap_eval(args: argparse.Namespace) -> int:
+    bootstrapped = bootstrap_eval_dataset(args.dataset)
+    output_text = json.dumps(bootstrapped, indent=2) + "\n"
+    _write_or_print(output_text, args.output)
+    return 0
+
+
+def _cmd_simulate(args: argparse.Namespace) -> int:
+    bundle = load_export_bundle(args.bundle)
+    dataset = generate_scenarios_from_bundle(
+        bundle=bundle,
+        count=args.count,
+        requested_turns=args.turns,
+        include_small_talk=True,
+        persona_tone=args.tone,
+        persona_tech_literacy=args.tech_literacy,
+        agent_strategy=args.agent_strategy,
+    )
+    # Attach 5D persona progression trace & directive preview to each simulated conversation
+    for conv in dataset.get("conversations") or []:
+        state = init_5d_persona_state(
+            tone=args.tone,
+            tech_literacy=args.tech_literacy,
+            patience=args.patience,
+            escalation_tendency=args.escalation_tendency,
+            verbosity=args.verbosity,
+        )
+        prev_agent = ""
+        for t in conv.get("turns") or []:
+            if t.get("role") == "HUMAN_AGENT":
+                update_5d_persona_state(state, t.get("text", ""), prev_agent)
+                prev_agent = t.get("text", "")
+        conv["persona_5d_final"] = {
+            "initial_tone": state.initial_tone,
+            "final_tone": state.current_tone,
+            "initial_patience": state.initial_patience,
+            "final_patience": state.current_patience,
+            "tech_literacy": state.tech_literacy,
+            "verbosity": state.verbosity,
+            "escalation_tendency": state.escalation_tendency,
+            "escalation_requested": state.escalation_requested,
+            "tone_history": state.tone_history,
+            "sample_directive": build_5d_persona_directive(
+                state, {"order_id": "ORD-849201", "email": "alex.rivera@example.com"}
+            ),
+        }
+
+    output_text = json.dumps(dataset, indent=2) + "\n"
+    _write_or_print(output_text, args.output)
+    return 0
+
+
 def _cmd_eval(args: argparse.Namespace) -> int:
     client = None
     if args.live and args.profile:
@@ -166,10 +263,13 @@ def _cmd_eval(args: argparse.Namespace) -> int:
             quota_project_id=args.quota_project or project_id,
         )
 
+    bundle = load_export_bundle(args.bundle) if getattr(args, "bundle", None) else None
     report = evaluate_dataset(
         dataset_path=args.dataset,
         client=client,
         profile_name=args.profile,
+        bundle=bundle,
+        baseline_run_path=getattr(args, "baseline_run", None),
     )
     if args.format == "json":
         output_text = json.dumps(report, indent=2) + "\n"
@@ -193,12 +293,22 @@ def _cmd_voice_synth(args: argparse.Namespace) -> int:
         cadence_ms=args.cadence_ms,
         jitter_ms=args.jitter_ms,
         single_utterance_endpointing=args.single_utterance,
+        telephone_filter=args.telephone_filter,
+        noise_profile=args.noise_profile,
+        stereo=args.stereo,
+        include_transfer_ring=args.include_transfer_ring,
     )
-    client = CompanionAgentRestClient(
-        project_id=args.project,
-        location=args.location,
-        quota_project_id=args.quota_project or args.project,
-    )
+    client = None
+    if not args.offline:
+        if not args.project:
+            print("Error: --project is required unless --offline is specified.", file=sys.stderr)
+            return 2
+        client = CompanionAgentRestClient(
+            project_id=args.project,
+            location=args.location,
+            quota_project_id=args.quota_project or args.project,
+        )
+
     manifest = synthesize_transcript_audio(
         client=client,
         turns=turns or [],
@@ -206,10 +316,13 @@ def _cmd_voice_synth(args: argparse.Namespace) -> int:
         caller_voice=args.caller_voice,
         agent_voice=args.agent_voice,
         streaming_profile=profile,
+        offline_fallback=args.offline,
     )
     print(
         f"Synthesized {len(manifest['turns'])} turn(s) using stock voices only "
-        f"(derivedFromCustomerData={manifest['derivedFromCustomerData']}) into {args.output_dir}"
+        f"(derivedFromCustomerData={manifest['derivedFromCustomerData']}, "
+        f"telephoneFilter={profile.telephone_filter}, noiseProfile={profile.noise_profile}, "
+        f"stereo={profile.stereo}) into {args.output_dir}"
     )
     return 0
 
@@ -267,7 +380,7 @@ def _cmd_hillclimb(args: argparse.Namespace) -> int:
         _write_or_print(output_text, args.output)
         return 0
 
-    eval_report = evaluate_dataset(dataset_path=args.dataset)
+    eval_report = evaluate_dataset(dataset_path=args.dataset, bundle=bundle)
     loss_patterns = analyze_loss_patterns(eval_report)
     candidate_bundle, applied_proposals = propose_bundle_improvements(bundle, loss_patterns)
 
@@ -300,7 +413,7 @@ def _cmd_hillclimb(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="aa-devkit",
-        description="Stateless CLI for Agent Assist Companion Agent DevKit (L1 – L4).",
+        description="Stateless CLI for Agent Assist Companion Agent DevKit (L1 – L4 + Simulator Suite).",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -391,12 +504,111 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_review.set_defaults(func=_cmd_review)
 
-    # eval (FR-4.1, FR-4.2)
+    # import-transcript (Simulator Capability #1)
+    p_import = subparsers.add_parser(
+        "import-transcript",
+        help="3-Stage Universal Transcript Importer & Consistent [REDACTED] PII Healer (Genesys, Amazon Connect, CCAI, CSV/TSV, Call Logs).",
+    )
+    p_import.add_argument("input", help="Path to raw transcript file (JSON, CSV, TSV, or TXT).")
+    p_import.add_argument("--conversation-id", help="Optional conversation_id override.")
+    p_import.add_argument("--description", help="Optional description override.")
+    p_import.add_argument(
+        "--agent-mode",
+        choices=["TRANSCRIPT", "SUGGESTION"],
+        default="TRANSCRIPT",
+        help="Keep original agent turns (TRANSCRIPT) or convert to dynamic suggestion-following mode (SUGGESTION).",
+    )
+    p_import.add_argument(
+        "--no-merge-consecutive",
+        action="store_true",
+        help="Do not merge consecutive turns from the same speaker.",
+    )
+    p_import.add_argument(
+        "--no-heal-pii",
+        action="store_true",
+        help="Disable Stage 3 [REDACTED] / [PII] placeholder healing.",
+    )
+    p_import.add_argument("--output", help="Optional file path to write imported FR-4.2 evaluation dataset JSON.")
+    p_import.set_defaults(func=_cmd_import_transcript)
+
+    # generate-scenarios (Simulator Capability #2)
+    p_gen = subparsers.add_parser(
+        "generate-scenarios",
+        help="Config-Aware Synthetic Scenario Generator enforcing Multi-Step Workflow Pacing (1 step = 2 turns) and Negative Suppression.",
+    )
+    p_gen.add_argument("--bundle", required=True, help="Path to local exported CompanionAgent bundle directory or .zip.")
+    p_gen.add_argument("--count", type=int, default=2, help="Number of synthetic conversations to generate.")
+    p_gen.add_argument(
+        "--turns",
+        type=int,
+        default=6,
+        help="Requested minimum turns per scenario (auto-expanded if workflow step count requires more turns).",
+    )
+    p_gen.add_argument(
+        "--no-small-talk",
+        action="store_true",
+        help="Omit opening/closing negative-suppression small-talk turns.",
+    )
+    p_gen.add_argument("--tone", choices=sorted(TONE_GUIDANCE.keys()), default="polite")
+    p_gen.add_argument("--tech-literacy", choices=["low", "medium", "high"], default="medium")
+    p_gen.add_argument("--agent-strategy", choices=list(AGENT_STRATEGIES), default="strict")
+    p_gen.add_argument("--output", help="Optional file path to write generated FR-4.2 evaluation dataset JSON.")
+    p_gen.set_defaults(func=_cmd_generate_scenarios)
+
+    # bootstrap-eval (Simulator Capability #4)
+    p_boot = subparsers.add_parser(
+        "bootstrap-eval",
+        help="Reverse-engineer ground-truth expected_entities, expected_guidance_cards, and expected_tools from recorded actual_response payloads.",
+    )
+    p_boot.add_argument("dataset", help="Path to dataset JSON containing recorded actual_response payloads.")
+    p_boot.add_argument("--output", help="Optional file path to write bootstrapped dataset JSON.")
+    p_boot.set_defaults(func=_cmd_bootstrap_eval)
+
+    # simulate (Simulator Capability #5 / FR-5.5)
+    p_sim = subparsers.add_parser(
+        "simulate",
+        help="Run 5D Dynamic Customer Persona & 4-Strategy Virtual Human Agent Perturbation Harness (FR-5.5).",
+    )
+    p_sim.add_argument("--bundle", required=True, help="Path to local exported CompanionAgent bundle.")
+    p_sim.add_argument("--count", type=int, default=1, help="Number of simulated conversations.")
+    p_sim.add_argument("--turns", type=int, default=8, help="Target turns per simulated conversation.")
+    p_sim.add_argument("--tone", choices=sorted(TONE_GUIDANCE.keys()), default="polite", help="Initial 5D caller tone.")
+    p_sim.add_argument(
+        "--tech-literacy",
+        choices=["low", "medium", "high"],
+        default="medium",
+        help="5D caller tech literacy (controls slot drip-feeding rate).",
+    )
+    p_sim.add_argument("--patience", type=int, default=4, help="Initial 5D caller patience (1-5).")
+    p_sim.add_argument(
+        "--escalation-tendency",
+        choices=["low", "medium", "high"],
+        default="medium",
+        help="5D caller supervisor escalation tendency.",
+    )
+    p_sim.add_argument(
+        "--verbosity",
+        choices=sorted(VERBOSITY_GUIDANCE.keys()),
+        default="normal",
+        help="5D caller utterance verbosity.",
+    )
+    p_sim.add_argument(
+        "--agent-strategy",
+        choices=list(AGENT_STRATEGIES),
+        default="strict",
+        help="Virtual Human Agent strategy: strict, paraphrase, deviate, or probe_negative.",
+    )
+    p_sim.add_argument("--output", help="Optional file path to write simulated dataset JSON.")
+    p_sim.set_defaults(func=_cmd_simulate)
+
+    # eval (FR-4.1, FR-4.2 + Simulator Capabilities #3 & #4)
     p_eval = subparsers.add_parser(
         "eval",
-        help="Run turn-by-turn Companion Agent evaluation pipeline offline or live via :analyzeContent (FR-4.1, FR-4.2).",
+        help="Run turn-by-turn Companion Agent evaluation pipeline with Layer 0 state-machine checks and Strict/Forgiving F1 (FR-4.1, FR-4.2).",
     )
     p_eval.add_argument("dataset", help="Path to turn-by-turn evaluation JSON dataset.")
+    p_eval.add_argument("--bundle", help="Optional exported bundle path to enforce confirmationRequirement=REQUIRED checks.")
+    p_eval.add_argument("--baseline-run", help="Optional prior evaluation report or dataset JSON to compute regression deltas.")
     p_eval.add_argument("--live", action="store_true", help="Execute live :analyzeContent calls against GCP.")
     p_eval.add_argument("--profile", help="Full ConversationProfile resource path (required with --live).")
     p_eval.add_argument("--project", help="Optional GCP project ID override.")
@@ -407,13 +619,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_eval.add_argument("--output", help="Optional file path to write evaluation report.")
     p_eval.set_defaults(func=_cmd_eval)
 
-    # voice-synth (FR-5.1, FR-5.3)
+    # voice-synth (FR-5.1, FR-5.3 + Simulator Capability #6)
     p_vsynth = subparsers.add_parser(
         "voice-synth",
-        help="Synthesize turn-by-turn audio from transcript using stock TTS voices only (FR-5.1, FR-5.3).",
+        help="Synthesize turn-by-turn audio with stock TTS voices, prosody normalization, and PSTN telephony DSP effects (FR-5.1, FR-5.3).",
     )
     p_vsynth.add_argument("transcript", help="Path to JSON file containing conversation turns.")
-    p_vsynth.add_argument("--project", required=True, help="Customer GCP project ID for Cloud TTS API.")
+    p_vsynth.add_argument("--project", help="Customer GCP project ID for Cloud TTS API (optional with --offline).")
     p_vsynth.add_argument("--location", default="global")
     p_vsynth.add_argument("--quota-project", help="Optional X-Goog-User-Project override.")
     p_vsynth.add_argument("--output-dir", required=True, help="Output directory for WAV files and voice_manifest.json.")
@@ -437,6 +649,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_vsynth.add_argument("--cadence-ms", type=int, default=100)
     p_vsynth.add_argument("--jitter-ms", type=int, default=0)
     p_vsynth.add_argument("--single-utterance", action="store_true")
+    p_vsynth.add_argument(
+        "--telephone-filter",
+        action="store_true",
+        help="Apply G.711 PSTN bandpass filter (190 Hz - 3100 Hz) and soft-knee telephony saturation.",
+    )
+    p_vsynth.add_argument(
+        "--noise-profile",
+        choices=list(ALLOWED_NOISE_PROFILES),
+        default="none",
+        help="Mix ambient background noise (none, call_center, white_noise).",
+    )
+    p_vsynth.add_argument(
+        "--stereo",
+        action="store_true",
+        help="Also export a dual-channel full_call_stereo.wav (Caller=Left, Agent=Right).",
+    )
+    p_vsynth.add_argument(
+        "--include-transfer-ring",
+        action="store_true",
+        help="Prepend a 440Hz+480Hz North American PSTN transfer ringback tone.",
+    )
+    p_vsynth.add_argument(
+        "--offline",
+        action="store_true",
+        help="Generate speech-cadence harmonic test WAVs locally without calling Cloud TTS API.",
+    )
     p_vsynth.set_defaults(func=_cmd_voice_synth)
 
     # voice-replay (FR-5.2, FR-5.3)

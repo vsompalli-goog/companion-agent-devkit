@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "exportedAt": "2026-10-09T12:00:00Z",
+  "projectId": "sample-retail-ccai-prod",
+  "location": "global",
+  "environment": "prod",
+  "conversationProfileName": "projects/sample-retail-ccai-prod/locations/global/conversationProfiles/retail-companion-profile",
+  "companionAgentName": "projects/sample-retail-ccai-prod/locations/global/companionAgents/retail-order-assistant",
+  "workflowCount": 1,
+  "toolCount": 2
+}

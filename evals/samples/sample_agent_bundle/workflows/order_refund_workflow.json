@@ -1,0 +1,21 @@
+{
+  "name": "projects/sample-retail-ccai-prod/locations/global/workflows/order_refund_workflow",
+  "displayName": "Order Refund Multi-Step Workflow",
+  "steps": [
+    {
+      "stepId": "step_1_verify_order",
+      "displayName": "Step 1: Collect Order ID & Lookup Order",
+      "instruction": "Ask the caller for their order_id and invoke lookup_order."
+    },
+    {
+      "stepId": "step_2_confirm_damage",
+      "displayName": "Step 2: Verify Damaged Item Eligibility",
+      "instruction": "Verify the item is within the 30-day return window."
+    },
+    {
+      "stepId": "step_3_issue_refund",
+      "displayName": "Step 3: Propose HITL Refund Tool",
+      "instruction": "Propose issue_refund with confirmationRequirement=REQUIRED."
+    }
+  ]
+}

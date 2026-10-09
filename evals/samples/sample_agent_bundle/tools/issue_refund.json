@@ -1,0 +1,24 @@
+{
+  "name": "projects/sample-retail-ccai-prod/locations/global/tools/issue_refund",
+  "displayName": "issue_refund",
+  "description": "Issues a monetary refund for a damaged or returned order after human agent confirmation.",
+  "confirmationRequirement": "REQUIRED",
+  "inputSchema": {
+    "type": "object",
+    "required": ["order_id", "amount", "reason"],
+    "properties": {
+      "order_id": {
+        "type": "string",
+        "description": "Customer order identifier."
+      },
+      "amount": {
+        "type": "number",
+        "description": "Refund amount in USD."
+      },
+      "reason": {
+        "type": "string",
+        "description": "Reason code for the refund (e.g. damaged_item)."
+      }
+    }
+  }
+}

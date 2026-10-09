@@ -1,0 +1,9 @@
+{
+  "name": "projects/sample-retail-ccai-prod/locations/global/conversationProfiles/retail-companion-profile",
+  "displayName": "Retail Order Support Companion Profile",
+  "humanAgentAssistantConfig": {
+    "companionAgentConfig": {
+      "companionAgent": "projects/sample-retail-ccai-prod/locations/global/companionAgents/retail-order-assistant"
+    }
+  }
+}

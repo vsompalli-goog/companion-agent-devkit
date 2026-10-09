@@ -1,0 +1,16 @@
+{
+  "name": "projects/sample-retail-ccai-prod/locations/global/tools/lookup_order",
+  "displayName": "lookup_order",
+  "description": "Looks up a customer order by order_id when the customer provides their order number.",
+  "confirmationRequirement": "NOT_REQUIRED",
+  "inputSchema": {
+    "type": "object",
+    "required": ["order_id"],
+    "properties": {
+      "order_id": {
+        "type": "string",
+        "description": "Customer order identifier (e.g. ORD-849201)."
+      }
+    }
+  }
+}

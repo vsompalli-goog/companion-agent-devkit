@@ -1,0 +1,6 @@
+[00:00:02] Customer: Hello!
+[00:00:05] Agent (Sarah): Hi there, thank you for calling support, my name is [REDACTED]. How may I help you?
+[00:00:11] Customer: Hi, this is [REDACTED]. I need to check the status of my order # [REDACTED].
+It hasn't arrived yet and my callback phone number is [REDACTED].
+[00:00:24] Agent (Sarah): I'd be happy to check order # [REDACTED] for you, [REDACTED], and I have your callback number as [REDACTED].
+[00:00:31] Customer: Ok, thanks!

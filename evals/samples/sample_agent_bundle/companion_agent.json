@@ -1,0 +1,22 @@
+{
+  "name": "projects/sample-retail-ccai-prod/locations/global/companionAgents/retail-order-assistant",
+  "displayName": "Retail Order & Refund Companion Agent",
+  "systemInstruction": "You are a concise, real-time Companion Agent assisting human contact center agents with order lookups and damaged-item refunds. Do not emit guidance cards on greetings, acknowledgments, hold filler, or small talk.",
+  "guidanceInstructions": [
+    {
+      "displayName": "Order Lookup & Return Policy",
+      "instruction": "## Situation\nTrigger when the customer reports a missing, delayed, or damaged order and has not yet had their order looked up.\n\n## Action\n1. Express empathy for the order issue.\n2. Ask the customer for their `order_id` if not already provided.\n3. Once `order_id` is provided, invoke `{TOOL: lookup_order}`."
+    },
+    {
+      "displayName": "Damaged Item Refund Confirmation",
+      "instruction": "## Situation\nTrigger after `{TOOL: lookup_order}` succeeds and the customer requests a refund or replacement for a damaged item.\n\n## Action\n1. Confirm the refund amount and reason with the customer.\n2. Propose `{TOOL: issue_refund}` with `confirmationRequirement: REQUIRED` so the human agent can review and approve."
+    }
+  ],
+  "workflows": [
+    "projects/sample-retail-ccai-prod/locations/global/workflows/order_refund_workflow"
+  ],
+  "tools": [
+    "projects/sample-retail-ccai-prod/locations/global/tools/lookup_order",
+    "projects/sample-retail-ccai-prod/locations/global/tools/issue_refund"
+  ]
+}

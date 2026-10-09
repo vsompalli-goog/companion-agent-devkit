@@ -1,0 +1,34 @@
+{
+  "conversationId": "genesys-call-98210",
+  "transcripts": [
+    {
+      "transcriptId": "tr-001",
+      "phrases": [
+        {
+          "participantPurpose": "external",
+          "text": "Hi, good morning!"
+        },
+        {
+          "participantPurpose": "internal",
+          "text": "Good morning! Thank you for calling Acme Retail, my name is [REDACTED_NAME]. How can I help you today?"
+        },
+        {
+          "participantPurpose": "external",
+          "text": "Hi, my name is [REDACTED_NAME]."
+        },
+        {
+          "participantPurpose": "external",
+          "text": "I'm calling about my damaged order [REDACTED_ORDER] and I'd like a refund sent to my email [REDACTED_EMAIL]."
+        },
+        {
+          "participantPurpose": "internal",
+          "text": "I'm so sorry to hear your item arrived damaged, [REDACTED_NAME]. Let me pull up order [REDACTED_ORDER] and send the refund confirmation to [REDACTED_EMAIL]."
+        },
+        {
+          "participantPurpose": "external",
+          "text": "Thank you!"
+        }
+      ]
+    }
+  ]
+}
