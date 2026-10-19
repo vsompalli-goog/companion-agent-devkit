@@ -1,21 +1,126 @@
 {
-  "name": "projects/sample-retail-ccai-prod/locations/global/workflows/order_refund_workflow",
+  "name": "projects/sample-retail-ccai-prod/locations/global/companionAgentWorkflows/order-refund-workflow",
   "displayName": "Order Refund Multi-Step Workflow",
+  "description": "Trigger when the customer reports a damaged or missing order and requests a refund.",
+  "rootStepId": "step_1_verify_order",
   "steps": [
     {
-      "stepId": "step_1_verify_order",
-      "displayName": "Step 1: Collect Order ID & Lookup Order",
-      "instruction": "Ask the caller for their order_id and invoke lookup_order."
+      "id": "step_1_verify_order",
+      "title": "Step 1: Collect Order ID & Lookup Order",
+      "type": "INFORMATION_COLLECTION",
+      "actions": [
+        {
+          "humanAgentAction": {
+            "informationCollectionAction": {
+              "displayDetails": {
+                "content": "Ask the caller for their order_id so you can look up their order.",
+                "enableMarkdown": true
+              },
+              "messageSuggestionConfig": {
+                "content": "I can help you with that right away. Could you please share your Order ID?",
+                "verbatim": false
+              },
+              "variables": [
+                {
+                  "name": "customer_order_id",
+                  "description": "The customer's order identifier (e.g. ORD-849201).",
+                  "stringType": {}
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "targetStepId": "step_2_confirm_damage"
+        }
+      ]
     },
     {
-      "stepId": "step_2_confirm_damage",
-      "displayName": "Step 2: Verify Damaged Item Eligibility",
-      "instruction": "Verify the item is within the 30-day return window."
+      "id": "step_2_confirm_damage",
+      "title": "Step 2: Lookup Order & Verify Eligibility",
+      "type": "SYSTEM_ACTION",
+      "actions": [
+        {
+          "systemAction": {
+            "displayDetails": {
+              "content": "Invoke lookup_order to verify the item is within the 30-day return window.",
+              "enableMarkdown": true
+            },
+            "cesToolSpec": {
+              "cesTool": "projects/sample-retail-ccai-prod/locations/global/tools/lookup_order",
+              "confirmationRequirement": "NOT_REQUIRED",
+              "proactiveEnabled": true,
+              "reactiveEnabled": true
+            },
+            "outputVariableMappings": [
+              {
+                "fieldPaths": [
+                  {
+                    "path": "return_eligible"
+                  }
+                ],
+                "variable": {
+                  "name": "return_eligible_status",
+                  "description": "Whether the order is within the 30-day return window.",
+                  "stringType": {}
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "targetStepId": "step_3_issue_refund"
+        }
+      ]
     },
     {
-      "stepId": "step_3_issue_refund",
-      "displayName": "Step 3: Propose HITL Refund Tool",
-      "instruction": "Propose issue_refund with confirmationRequirement=REQUIRED."
+      "id": "step_3_issue_refund",
+      "title": "Step 3: Propose HITL Refund Tool",
+      "type": "SYSTEM_ACTION",
+      "actions": [
+        {
+          "systemAction": {
+            "displayDetails": {
+              "content": "Propose issue_refund with confirmationRequirement=REQUIRED.",
+              "enableMarkdown": true
+            },
+            "cesToolSpec": {
+              "cesTool": "projects/sample-retail-ccai-prod/locations/global/tools/issue_refund",
+              "confirmationRequirement": "REQUIRED",
+              "proactiveEnabled": true,
+              "reactiveEnabled": false
+            },
+            "outputVariableMappings": [
+              {
+                "fieldPaths": [
+                  {
+                    "path": "refund_id"
+                  }
+                ],
+                "variable": {
+                  "name": "issued_refund_id",
+                  "description": "Confirmation ID of the issued refund.",
+                  "stringType": {}
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "targetStepId": "end_workflow"
+        }
+      ]
+    },
+    {
+      "id": "end_workflow",
+      "title": "End Workflow",
+      "type": "END_WORKFLOW"
     }
   ]
 }

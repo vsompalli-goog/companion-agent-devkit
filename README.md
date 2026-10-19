@@ -10,7 +10,7 @@
 
 | Level | Capability | Deliverables & CLI Subcommands |
 | :--- | :--- | :--- |
-| **L1: Best-Practice Skills Pack** (`7.2`) | Authoring rules, reactive vs. proactive & tool-type decision guides, AI Coach/PGKA migration, Workflow/AnswerRecord APIs, UI concurrency bridge, and golden-question regression suite | `pack/rules/companion-agent-guardrails.md`, `pack/skills/aa-companion-architect/`, `pack/skills/aa-migration/`, `aa-devkit install-pack`, `aa-devkit migrate-coach`, `aa-devkit eval-skills` (`FR-1.1` – `FR-1.5`) |
+| **L1: Best-Practice Skills Pack** (`7.2`) | Authoring rules, reactive vs. proactive & tool-type decision guides, Workflow DAG generator skill, AI Coach/PGKA migration, Workflow/AnswerRecord APIs, UI concurrency bridge, and golden-question regression suite | `pack/rules/companion-agent-guardrails.md`, `pack/skills/aa-companion-architect/`, `pack/skills/aa-workflow-generator/`, `pack/skills/aa-migration/`, `aa-devkit install-pack`, `aa-devkit generate-workflow`, `aa-devkit migrate-coach`, `aa-devkit eval-skills` (`FR-1.1` – `FR-1.5`) |
 | **L2: Config Export & Review** (`7.3`) | Stateless export of Conversation Profile + Companion Agent + Workflows + CES/Dialogflow Tools to local folder/zip, plus deterministic & AI-assisted best-practice review | `aa-devkit export`, `aa-devkit review`, `pack/skills/aa-config-review/` (`FR-2.1`, `FR-2.2`) |
 | **L3: Eval Pipeline, Simulator Suite, Voice DSP & Latency** (`7.5` – `7.7`) | 3-Stage Universal Transcript Importer & PII Healer, Config-Aware Scenario Generator, Layer 0 Cross-Turn State-Machine Validator, Strict vs. Forgiving F1 & Ground-Truth Bootstrapper, 5D Persona & 4-Strategy Agent Perturbation Harness, Stock-Voice TTS + PSTN Telephony DSP, and 6-Stage Latency Taxonomy | `aa-devkit import-transcript`, `aa-devkit generate-scenarios`, `aa-devkit bootstrap-eval`, `aa-devkit simulate`, `aa-devkit eval`, `aa-devkit voice-synth`, `aa-devkit voice-replay`, `aa-devkit latency-report` (`FR-4.1` – `FR-6.4`) |
 | **L4: Eval-Driven Hill-Climbing** (`7.8`) | Pre-run Vertex AI token/cost estimator, automated evaluation loss-pattern clustering, and local candidate bundle fix proposals in the customer's project (`PRIV-13`) | `aa-devkit hillclimb`, `pack/skills/aa-eval-hillclimb/` (`FR-7.1` – `FR-7.3`) |
@@ -42,9 +42,15 @@ aa-devkit install-pack --target claude --dest /path/to/customer-workspace
 aa-devkit eval-skills
 ```
 
-### 3. Migrate Legacy AI Coach / PGKA Configs (`FR-1.3`)
+### 3. Generate Workflows & Migrate Legacy AI Coach / PGKA Configs (`FR-1.3`, `FR-1.4`)
 
 ```bash
+# Compile a shorthand SOP/step spec into a DAG-verified Dialogflow v2beta1 CompanionAgentWorkflow JSON
+aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
+  --bundle evals/samples/sample_agent_bundle \
+  --output ./generated_damaged_item_workflow.json
+
+# Migrate legacy AI Coach / PGKA Generator JSON into Companion Agent JSON
 aa-devkit migrate-coach ./legacy_ai_coach_generator.json --output ./migrated_companion_agent.json
 ```
 
@@ -129,6 +135,7 @@ companion-agent-devkit/
 │   ├── exporter.py            # Stateless graph exporter to folder or .zip (FR-2.1)
 │   ├── reviewer.py            # Deterministic P0/P1/P2 config linter (FR-2.2)
 │   ├── migrator.py            # AI Coach & PGKA -> Companion Agent converter (FR-1.3)
+│   ├── workflow_generator.py  # CompanionAgentWorkflow DAG generator & normalizer (FR-1.4)
 │   ├── skill_eval.py          # Golden-question regression suite runner (FR-1.5)
 │   ├── transcript_importer.py # 3-Stage Universal Transcript Importer & [REDACTED] PII Healer
 │   ├── scenario_generator.py  # Config-Aware Scenario Generator, 5D Persona & 4-Strategy Agent Harness
@@ -145,11 +152,13 @@ companion-agent-devkit/
 │       ├── sample_eval_conversations.json
 │       ├── sample_genesys_transcript.json
 │       ├── sample_call_log.txt
+│       ├── sample_workflow_sop_spec.json
 │       └── sample_agent_bundle/       # Ready-to-run exported Companion Agent bundle
 ├── pack/                      # Single source of truth for rules, skills, guides & samples
 │   ├── rules/companion-agent-guardrails.md
 │   └── skills/
 │       ├── aa-companion-architect/    # L1 + FR-6.1: Authoring, Decision Guides, Workflow/UI, Latency
+│       ├── aa-workflow-generator/     # L1 (FR-1.4): Workflow DAG generation, 5 step types & C++ runtime rules
 │       ├── aa-migration/              # L1 (FR-1.3): AI Coach & PGKA -> Companion Agent migration
 │       ├── aa-config-review/          # L2 (FR-2.2): Guided audit workflow for exported bundles
 │       └── aa-eval-hillclimb/         # L4 (FR-7.1–7.3): Eval-driven hill-climbing workflow

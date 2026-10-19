@@ -1,0 +1,252 @@
+{
+  "anti_patterns_do_not_copy": {
+    "_why_this_fails": [
+      "1. displayName exceeds the 63-character limit enforced by companion_agent_workflow.proto.",
+      "2. description uses negative trigger words ('Do NOT suggest during initial greetings'), which causes Turn-1 false positives.",
+      "3. step_collect_info and step_lookup both declare a variable named 'account_id' (violates global variable uniqueness).",
+      "4. step_retry transitions back to step_collect_info (creates a cycle, which fails PublishCompanionAgentWorkflow).",
+      "5. step_orphan is unreachable from rootStepId.",
+      "6. end_workflow includes 'actions' and 'transitions' (rejected by proto validator)."
+    ],
+    "displayName": "Comprehensive Customer Billing Dispute Verification Eligibility Check and Credit Issuance Workflow",
+    "description": "Do NOT suggest during initial greetings or small talk. Use for billing disputes.",
+    "rootStepId": "step_collect_info",
+    "steps": [
+      {
+        "id": "step_collect_info",
+        "title": "Collect Account ID",
+        "type": "INFORMATION_COLLECTION",
+        "actions": [
+          {
+            "humanAgentAction": {
+              "informationCollectionAction": {
+                "variables": [
+                  { "name": "account_id", "description": "Account ID", "stringType": {} }
+                ]
+              }
+            }
+          }
+        ],
+        "transitions": [{ "targetStepId": "step_retry" }]
+      },
+      {
+        "id": "step_retry",
+        "title": "Retry Collection",
+        "type": "INFORMATIONAL_MESSAGE",
+        "actions": [],
+        "transitions": [{ "targetStepId": "step_collect_info" }]
+      },
+      {
+        "id": "step_orphan",
+        "title": "Unreachable Step",
+        "type": "INFORMATIONAL_MESSAGE",
+        "actions": [],
+        "transitions": [{ "targetStepId": "end_workflow" }]
+      },
+      {
+        "id": "end_workflow",
+        "title": "End Workflow",
+        "type": "END_WORKFLOW",
+        "actions": [{ "humanAgentAction": {} }],
+        "transitions": []
+      }
+    ]
+  },
+  "production_ready_pattern": {
+    "workflow": {
+      "displayName": "Billing Dispute & Credit Resolution Workflow",
+      "description": "Trigger when the customer disputes a billed charge, reports an unrecognized fee, or requests a billing credit.",
+      "rootStepId": "step_collect_dispute_info",
+      "steps": [
+        {
+          "id": "step_collect_dispute_info",
+          "title": "Collect Account ID & Disputed Charge Amount",
+          "type": "INFORMATION_COLLECTION",
+          "actions": [
+            {
+              "humanAgentAction": {
+                "informationCollectionAction": {
+                  "displayDetails": {
+                    "content": "Ask the caller for their Account ID and the disputed charge amount.",
+                    "enableMarkdown": true
+                  },
+                  "messageSuggestionConfig": {
+                    "content": "I would be glad to review that charge for you. Could you please share your Account ID and the disputed dollar amount?",
+                    "verbatim": false
+                  },
+                  "variables": [
+                    {
+                      "name": "customer_account_id",
+                      "description": "Verified customer Account ID (e.g. AC-90210).",
+                      "stringType": {}
+                    },
+                    {
+                      "name": "disputed_amount_usd",
+                      "description": "Dollar amount of the charge being disputed.",
+                      "numberType": {}
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "transitions": [
+            {
+              "targetStepId": "step_check_dispute_eligibility"
+            }
+          ]
+        },
+        {
+          "id": "step_check_dispute_eligibility",
+          "title": "Check Dispute Eligibility",
+          "type": "SYSTEM_ACTION",
+          "actions": [
+            {
+              "systemAction": {
+                "displayDetails": {
+                  "content": "Invoke check_dispute_eligibility once customer_account_id and disputed_amount_usd are collected.",
+                  "enableMarkdown": true
+                },
+                "cesToolSpec": {
+                  "cesTool": "projects/sample-proj/locations/global/apps/billing-app/tools/check_dispute_eligibility",
+                  "confirmationRequirement": "NOT_REQUIRED",
+                  "proactiveEnabled": true,
+                  "reactiveEnabled": true
+                },
+                "outputVariableMappings": [
+                  {
+                    "fieldPaths": [
+                      {
+                        "path": "eligibility_status"
+                      }
+                    ],
+                    "variable": {
+                      "name": "eligibility_status_out",
+                      "description": "Whether the charge qualifies for an automatic credit (ELIGIBLE or INELIGIBLE).",
+                      "enumType": {
+                        "values": ["ELIGIBLE", "INELIGIBLE"]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "transitions": [
+            {
+              "targetStepId": "step_issue_billing_credit",
+              "condition": {
+                "variableCondition": "eligibility_status_out == 'ELIGIBLE'"
+              }
+            },
+            {
+              "targetStepId": "step_inform_manual_review"
+            }
+          ]
+        },
+        {
+          "id": "step_issue_billing_credit",
+          "title": "Issue Billing Credit (HITL Confirmation)",
+          "type": "SYSTEM_ACTION",
+          "actions": [
+            {
+              "systemAction": {
+                "displayDetails": {
+                  "content": "Confirm and issue the billing credit for the eligible charge.",
+                  "enableMarkdown": true
+                },
+                "cesToolSpec": {
+                  "cesTool": "projects/sample-proj/locations/global/apps/billing-app/tools/issue_billing_credit",
+                  "confirmationRequirement": "REQUIRED",
+                  "proactiveEnabled": true,
+                  "reactiveEnabled": false
+                },
+                "outputVariableMappings": [
+                  {
+                    "fieldPaths": [
+                      {
+                        "path": "credit_confirmation_id"
+                      }
+                    ],
+                    "variable": {
+                      "name": "credit_confirmation_id_out",
+                      "description": "Confirmation number for the issued billing credit.",
+                      "stringType": {}
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "transitions": [
+            {
+              "targetStepId": "step_confirm_credit_complete"
+            }
+          ]
+        },
+        {
+          "id": "step_confirm_credit_complete",
+          "title": "Share Credit Confirmation Number",
+          "type": "INFORMATIONAL_MESSAGE",
+          "actions": [
+            {
+              "humanAgentAction": {
+                "informationalResponseAction": {
+                  "displayDetails": {
+                    "content": "Share the credit confirmation ID and let the caller know the credit will appear within 1-2 billing cycles.",
+                    "enableMarkdown": true
+                  },
+                  "messageSuggestionConfig": {
+                    "content": "Your billing credit has been processed and will appear on your statement within 1 to 2 billing cycles.",
+                    "verbatim": false
+                  }
+                }
+              }
+            }
+          ],
+          "transitions": [
+            {
+              "targetStepId": "end_workflow"
+            }
+          ]
+        },
+        {
+          "id": "step_inform_manual_review",
+          "title": "Explain Manual Escalation Path",
+          "type": "INFORMATIONAL_MESSAGE",
+          "actions": [
+            {
+              "humanAgentAction": {
+                "informationalResponseAction": {
+                  "displayDetails": {
+                    "content": "Explain that the charge requires specialist review and offer to submit an escalation ticket.",
+                    "enableMarkdown": true
+                  },
+                  "messageSuggestionConfig": {
+                    "content": "Because this charge is outside our automatic credit window, I can submit an escalation request to our billing specialists for review.",
+                    "verbatim": false
+                  }
+                }
+              }
+            }
+          ],
+          "transitions": [
+            {
+              "targetStepId": "end_workflow"
+            }
+          ]
+        },
+        {
+          "id": "end_workflow",
+          "title": "End Workflow",
+          "type": "END_WORKFLOW"
+        }
+      ]
+    },
+    "companionAgentWorkflowSpec": {
+      "workflow": "projects/sample-proj/locations/global/companionAgentWorkflows/billing-dispute-workflow",
+      "proactiveEnabled": true,
+      "reactiveEnabled": true
+    }
+  }
+}

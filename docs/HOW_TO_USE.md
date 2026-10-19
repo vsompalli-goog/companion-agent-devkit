@@ -45,13 +45,52 @@ aa-devkit install-pack --target claude --dest /path/to/customer/workspace
 
 **Installed Skills**:
 - `aa-companion-architect` (`FR-1.1`, `FR-1.2`, `FR-1.4`, `FR-6.1`): Authoring best practices, Reactive vs. Proactive & Tool-Type Decision Guides, Workflow/AnswerRecord APIs, UI Concurrency Bridge, and 6-Stage Latency Taxonomy.
+- `aa-workflow-generator` (`FR-1.4`): Generates, normalizes, and debugs `CompanionAgentWorkflow` JSON DAGs (`INFORMATION_COLLECTION`, `SYSTEM_ACTION`, `INFORMATIONAL_MESSAGE`, `MANUAL_ACTION`, `END_WORKFLOW`), globally unique `variables`, `outputVariableMappings`, conditional branch `transitions`, and C++ `WorkflowSelectionAgent` vs. `WorkflowExecutionAgent` rules.
 - `aa-migration` (`FR-1.3`): AI Coach (`agentCoachingContext`) and PGKA/GKA $\rightarrow$ Companion Agent migration guide.
 - `aa-config-review` (`FR-2.2`): Guided P0/P1/P2 configuration audit workflow.
 - `aa-eval-hillclimb` (`FR-7.1` – `FR-7.3`): Eval-driven hill-climbing workflow.
 
 > **Privacy Rule (`FR-1.1`)**: Third-party AI packages (such as `.claude`) are strictly for customers' own use inside their own environment. Google staff must **never** load customer data into third-party AI tools.
 
-### 2.2 Migrate Legacy AI Coach & PGKA Configurations (`FR-1.3`)
+### 2.2 Generate `CompanionAgentWorkflow` JSON DAGs (`aa-workflow-generator` Skill & CLI)
+
+You can generate valid Dialogflow `v2beta1` `CompanionAgentWorkflow` configurations in two ways:
+
+#### Option A: Using the `aa-workflow-generator` Skill in Jetski or Claude Code
+After running `aa-devkit install-pack`, ask your AI coding agent a prompt like:
+
+```text
+Using the aa-workflow-generator skill, convert this 4-step Billing Dispute SOP into a
+Dialogflow v2beta1 CompanionAgentWorkflow JSON and link it into my bundle:
+1. Ask the caller for their Account ID and disputed charge amount.
+2. Call check_dispute_eligibility(account_id, disputed_amount) and map eligibility_status.
+3. If eligibility_status == 'ELIGIBLE', propose issue_billing_credit (confirmationRequirement=REQUIRED)
+   and share the confirmation number; otherwise explain the 60-day policy window and offer a manual escalation.
+4. End the workflow.
+```
+
+The agent will load `pack/skills/aa-workflow-generator/SKILL.md` and `references/workflow_authoring_and_dag_rules.md` to enforce:
+- `displayName <= 63` characters and positive customer-intent `description` (read by `WorkflowSelectionAgent`).
+- Globally unique `snake_case` variable names across all `INFORMATION_COLLECTION` and `SYSTEM_ACTION` (`outputVariableMappings`) steps.
+- A cycle-free, 100% reachable DAG from `rootStepId` to `END_WORKFLOW` (with no `actions` or `transitions` on `END_WORKFLOW`).
+
+#### Option B: Using the `aa-devkit generate-workflow` CLI Compiler
+Compile a shorthand SOP/step JSON specification (such as the included `evals/samples/sample_workflow_sop_spec.json`) into a `:publish`-ready `v2beta1` `CompanionAgentWorkflow` JSON:
+
+```bash
+# 1. Compile shorthand SOP spec to a standalone DAG-verified CompanionAgentWorkflow JSON
+aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
+  --output /tmp/damaged_item_workflow.json
+
+# 2. Or pass --bundle to resolve tool resource paths from tools/*.json and auto-link
+#    companionAgentWorkflowSpecs in companion_agent.json:
+cp -r evals/samples/sample_agent_bundle /tmp/my_bundle_copy
+aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
+  --bundle /tmp/my_bundle_copy \
+  --output /tmp/my_bundle_copy/workflows/damaged_item_workflow.json
+```
+
+### 2.3 Migrate Legacy AI Coach & PGKA Configurations (`FR-1.3`)
 
 Convert a legacy Dialogflow v2beta1 Generator (`agentCoachingContext`) JSON into the modern Companion Agent (`skillConfigs` + `cesToolSpecs`) schema while automatically rewriting `{$tool.*}` $\rightarrow$ `{@TOOL:*}`, rescuing UI-only `displayDetails`, and adding `"triggerEvent": "CUSTOMER_MESSAGE"` to intake/verification cards:
 
@@ -60,9 +99,9 @@ aa-devkit migrate-coach ./legacy_ai_coach_generator.json \
   --output ./migrated_companion_agent.json
 ```
 
-### 2.3 Run Golden-Question Skill Regression Evals (`FR-1.5`)
+### 2.4 Run Golden-Question Skill Regression Evals (`FR-1.5`)
 
-Verify that all skills and progressive-disclosure references satisfy the 13 golden engineering questions in `evals/golden_questions.json`:
+Verify that all skills and progressive-disclosure references satisfy all 14 golden engineering questions in `evals/golden_questions.json`:
 
 ```bash
 aa-devkit eval-skills

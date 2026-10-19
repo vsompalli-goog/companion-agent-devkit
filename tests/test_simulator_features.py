@@ -43,6 +43,10 @@ from aa_devkit.voice_tester import (
     split_text_into_tts_chunks,
     synthesize_transcript_audio,
 )
+from aa_devkit.workflow_generator import (
+    generate_workflow_from_spec,
+    normalize_workflow_payload,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -361,3 +365,51 @@ def test_cli_subcommands_end_to_end(tmp_path: Path) -> None:
     )
     sim_data = json.loads(sim_out.read_text(encoding="utf-8"))
     assert sim_data["conversations"][0]["persona_5d_final"]["tech_literacy"] == "low"
+
+    import shutil
+    tmp_bundle = tmp_path / "bundle_copy"
+    shutil.copytree(REPO_ROOT / "evals" / "samples" / "sample_agent_bundle", tmp_bundle)
+
+    wf_out = tmp_path / "generated_workflow.json"
+    assert (
+        main(
+            [
+                "generate-workflow",
+                str(REPO_ROOT / "evals" / "samples" / "sample_workflow_sop_spec.json"),
+                "--bundle",
+                str(tmp_bundle),
+                "--output",
+                str(wf_out),
+            ]
+        )
+        == 0
+    )
+    wf_json = json.loads(wf_out.read_text(encoding="utf-8"))
+    assert len(wf_json["displayName"]) <= 63
+    assert wf_json["rootStepId"] == "step_1_collect_order_id"
+    assert wf_json["steps"][-1]["type"] == "END_WORKFLOW"
+    assert "actions" not in wf_json["steps"][-1]
+    assert "transitions" not in wf_json["steps"][-1]
+
+
+def test_workflow_generator_and_dag_normalizer() -> None:
+    """Verifies DAG cycle breaking, orphan pruning, 63-char displayName, and global variable uniqueness."""
+    examples_path = (
+        REPO_ROOT / "pack" / "skills" / "aa-workflow-generator" / "examples" / "workflow_good_vs_bad.json"
+    )
+    examples = json.loads(examples_path.read_text(encoding="utf-8"))
+    bad_wf = examples["anti_patterns_do_not_copy"]
+
+    healed_wf = normalize_workflow_payload(bad_wf)
+    assert len(healed_wf["displayName"]) <= 63
+    step_ids = [s["id"] for s in healed_wf["steps"]]
+    # Unreachable step_orphan must be pruned
+    assert "step_orphan" not in step_ids
+    # Cycle from step_retry -> step_collect_info must be broken and routed to end_workflow
+    retry_step = next(s for s in healed_wf["steps"] if s["id"] == "step_retry")
+    assert retry_step["transitions"][0]["targetStepId"] == "end_workflow"
+    # Terminal END_WORKFLOW step has no actions or transitions
+    end_step = next(s for s in healed_wf["steps"] if s["type"] == "END_WORKFLOW")
+    assert "actions" not in end_step
+    assert "transitions" not in end_step
+

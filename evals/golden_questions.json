@@ -118,6 +118,24 @@
       "question": "What guardrails must be enforced before and during an L4 eval-driven hill-climbing iteration?",
       "must_contain_concepts": ["estimate-only", "PRIV-13", "FALSE_POSITIVE_TRIGGER", "fail-on-p0"],
       "must_reject_concepts": []
+    },
+    {
+      "id": "GQ-014",
+      "fr": "FR-1.4",
+      "skill": "aa-workflow-generator",
+      "reference": "references/workflow_authoring_and_dag_rules.md",
+      "question": "What are the 5 CompanionAgentWorkflowStep.Type enum values, the protobuf DAG constraints on :publish, and the runtime separation between WorkflowSelectionAgent and WorkflowExecutionAgent?",
+      "must_contain_concepts": [
+        "INFORMATION_COLLECTION",
+        "SYSTEM_ACTION",
+        "INFORMATIONAL_MESSAGE",
+        "MANUAL_ACTION",
+        "END_WORKFLOW",
+        "63",
+        "WorkflowSelectionAgent",
+        "WorkflowExecutionAgent"
+      ],
+      "must_reject_concepts": []
     }
   ]
 }

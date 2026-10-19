@@ -21,7 +21,8 @@ Read only the reference file(s) needed for your immediate task:
    - Read [references/authoring_best_practices.md](references/authoring_best_practices.md) when writing or debugging `overarchingGuidance`, `guidanceInstructions`, `<call_context>` conditions, multi-step `actions[]`, or CES Python Function tools.
    - Inspect [examples/guidance_cards_good_vs_bad.json](examples/guidance_cards_good_vs_bad.json) for side-by-side anti-patterns vs. production-ready JSON patterns.
 
-3. **Workflow Agent APIs, Answer Record Updates & UI Concurrency (`FR-1.4`)**:
+3. **Workflow Authoring, DAG Generation, Runtime APIs & UI Concurrency (`FR-1.4`)**:
+   - Read [../aa-workflow-generator/SKILL.md](../aa-workflow-generator/SKILL.md) and [../aa-workflow-generator/references/workflow_authoring_and_dag_rules.md](../aa-workflow-generator/references/workflow_authoring_and_dag_rules.md) when generating or debugging `CompanionAgentWorkflow` JSON DAGs (`INFORMATION_COLLECTION`, `SYSTEM_ACTION`, `INFORMATIONAL_MESSAGE`, `MANUAL_ACTION`, `END_WORKFLOW`, globally unique `variables`, `outputVariableMappings`, conditional `transitions`, and `WorkflowSelectionAgent` vs. `WorkflowExecutionAgent`).
    - Read [references/workflow_api_and_ui_concurrency.md](references/workflow_api_and_ui_concurrency.md) when implementing:
      - `POST /v2beta1/{participant}:analyzeContent` workflow transitions (`companionSuggestionInput.workflowState` for start, step completion, revert, variable edits, exit)
      - Answer Record tool confirmation/cancellation (`suggestionInput`) and feedback updates (`PATCH /v2beta1/{answerRecord}?updateMask=answer_feedback`)

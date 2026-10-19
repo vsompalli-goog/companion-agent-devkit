@@ -268,7 +268,16 @@ def _extract_bundle_capabilities(bundle: dict[str, Any]) -> dict[str, Any]:
             continue
         wf_name = wf.get("displayName") or (wf.get("name") or "workflow").split("/")[-1]
         steps = wf.get("steps") or wf.get("workflowSteps") or []
-        step_count = len(steps) if isinstance(steps, list) else 3
+        if isinstance(steps, list):
+            active_steps = [
+                s
+                for s in steps
+                if isinstance(s, dict)
+                and str(s.get("type") or s.get("stepType") or "").upper() != "END_WORKFLOW"
+            ]
+            step_count = len(active_steps)
+        else:
+            step_count = 3
         # Also count numbered steps in instruction markdown if `steps` list is empty
         if step_count == 0:
             instr_txt = str(wf.get("instruction") or wf.get("description") or "")

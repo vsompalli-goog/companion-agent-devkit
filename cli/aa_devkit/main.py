@@ -51,6 +51,7 @@ from aa_devkit.voice_tester import (
     replay_voice_manifest,
     synthesize_transcript_audio,
 )
+from aa_devkit.workflow_generator import generate_workflow_from_spec
 
 
 def _write_or_print(output_text: str, output_path: Optional[str]) -> None:
@@ -191,6 +192,16 @@ def _cmd_generate_scenarios(args: argparse.Namespace) -> int:
         agent_strategy=args.agent_strategy,
     )
     output_text = json.dumps(dataset, indent=2) + "\n"
+    _write_or_print(output_text, args.output)
+    return 0
+
+
+def _cmd_generate_workflow(args: argparse.Namespace) -> int:
+    wf = generate_workflow_from_spec(
+        spec_path=args.spec,
+        bundle_dir=args.bundle,
+    )
+    output_text = json.dumps(wf, indent=2) + "\n"
     _write_or_print(output_text, args.output)
     return 0
 
@@ -554,6 +565,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_gen.add_argument("--agent-strategy", choices=list(AGENT_STRATEGIES), default="strict")
     p_gen.add_argument("--output", help="Optional file path to write generated FR-4.2 evaluation dataset JSON.")
     p_gen.set_defaults(func=_cmd_generate_scenarios)
+
+    # generate-workflow (Workflow Generator & DAG Normalizer)
+    p_gen_wf = subparsers.add_parser(
+        "generate-workflow",
+        help="Compile a shorthand SOP/step spec into a DAG-verified Dialogflow v2beta1 CompanionAgentWorkflow JSON.",
+    )
+    p_gen_wf.add_argument("spec", help="Path to shorthand or draft workflow JSON specification.")
+    p_gen_wf.add_argument(
+        "--bundle",
+        help="Optional exported bundle directory to resolve tool paths and auto-link companionAgentWorkflowSpecs.",
+    )
+    p_gen_wf.add_argument("--output", help="Optional file path to write normalized CompanionAgentWorkflow JSON.")
+    p_gen_wf.set_defaults(func=_cmd_generate_workflow)
 
     # bootstrap-eval (Simulator Capability #4)
     p_boot = subparsers.add_parser(

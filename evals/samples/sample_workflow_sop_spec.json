@@ -1,0 +1,85 @@
+{
+  "displayName": "Damaged Item Return & Refund Workflow",
+  "description": "Trigger when the customer reports a damaged or defective item and requests a refund or replacement.",
+  "rootStepId": "step_1_collect_order_id",
+  "steps": [
+    {
+      "id": "step_1_collect_order_id",
+      "title": "Step 1: Collect Order ID & Damage Details",
+      "type": "COLLECT",
+      "prompt": "I'm so sorry your item arrived damaged. Could you share your Order ID and let me know which item was affected?",
+      "variables": [
+        {
+          "name": "order_id",
+          "description": "The customer's order identifier (e.g. ORD-849201).",
+          "type": "STRING"
+        },
+        {
+          "name": "damage_reason",
+          "description": "Short description of the item damage.",
+          "type": "STRING"
+        }
+      ],
+      "transitions": ["step_2_lookup_order"]
+    },
+    {
+      "id": "step_2_lookup_order",
+      "title": "Step 2: Lookup Order & Check Return Window",
+      "type": "TOOL_CALL",
+      "tool": "lookup_order",
+      "confirmationRequirement": "NOT_REQUIRED",
+      "outputVariableMappings": [
+        {
+          "name": "return_window_status",
+          "description": "Whether the order is within the 30-day return window.",
+          "fieldPath": "return_window_status",
+          "values": ["ELIGIBLE", "EXPIRED"]
+        },
+        {
+          "name": "order_total_usd",
+          "description": "Total refundable amount in USD.",
+          "fieldPath": "order_total_usd",
+          "type": "NUMBER"
+        }
+      ],
+      "transitions": [
+        {
+          "targetStepId": "step_3_issue_refund",
+          "condition": "return_window_status == 'ELIGIBLE'"
+        },
+        {
+          "targetStepId": "step_4_explain_expired_window"
+        }
+      ]
+    },
+    {
+      "id": "step_3_issue_refund",
+      "title": "Step 3: Issue Refund (HITL Approval Required)",
+      "type": "TOOL_CALL",
+      "tool": "issue_refund",
+      "confirmationRequirement": "REQUIRED",
+      "outputVariableMappings": [
+        {
+          "name": "refund_confirmation_code",
+          "description": "Confirmation ID returned by issue_refund.",
+          "fieldPath": "refund_confirmation_code"
+        }
+      ],
+      "transitions": ["step_5_confirm_refund_sent"]
+    },
+    {
+      "id": "step_4_explain_expired_window",
+      "title": "Step 4: Explain Expired Return Window & Store Credit Option",
+      "type": "INFORM",
+      "prompt": "Because this order is past our 30-day return window, I cannot issue a card refund automatically, but I can offer a merchandise store credit.",
+      "transitions": ["end_workflow"]
+    },
+    {
+      "id": "step_5_confirm_refund_sent",
+      "title": "Step 5: Share Refund Confirmation Code",
+      "type": "INFORM",
+      "prompt": "Your refund has been processed and you will receive an email confirmation shortly.",
+      "transitions": ["end_workflow"]
+    }
+  ]
+}
