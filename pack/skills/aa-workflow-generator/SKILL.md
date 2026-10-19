@@ -22,17 +22,24 @@ Use this skill whenever translating a contact center Standard Operating Procedur
 
 ## CLI Workflow Generation & Normalization (`aa-devkit generate-workflow`)
 
-You can also invoke the stateless CLI to compile a shorthand SOP/step specification into a DAG-verified `CompanionAgentWorkflow` JSON (and optionally inject it into an exported bundle):
+You can invoke the stateless CLI to compile a **PDF SOP document (`.pdf`)**, a **Markdown/Text SOP (`.md`/`.txt`)**, or a **shorthand JSON spec (`.json`)** into a DAG-verified `CompanionAgentWorkflow` JSON (and optionally inject it into an exported bundle):
 
 ```bash
-# Compile a shorthand workflow spec into a DAG-verified v2beta1 CompanionAgentWorkflow JSON
-aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
-  --output ./generated_workflow.json
+# 1. Generate a DAG-verified CompanionAgentWorkflow directly from a PDF SOP document (.pdf)
+aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
+  --bundle evals/samples/sample_agent_bundle \
+  --output ./generated_pdf_workflow.json
 
-# Or inject the generated workflow + companionAgentWorkflowSpecs directly into an exported bundle
+# 2. (Optional) Use Vertex AI Gemini multimodal (application/pdf inlineData) for scanned/flowchart PDFs
+aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
+  --bundle evals/samples/sample_agent_bundle \
+  --use-vertex --project my-gcp-project \
+  --output ./generated_pdf_workflow.json
+
+# 3. Compile a shorthand JSON workflow spec into a DAG-verified v2beta1 CompanionAgentWorkflow JSON
 aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
-  --bundle ./my_agent_bundle/ \
-  --output ./my_agent_bundle/workflows/billing_dispute_workflow.json
+  --bundle evals/samples/sample_agent_bundle \
+  --output ./generated_workflow.json
 ```
 
 ## Mandatory Workflow Generation Checklist

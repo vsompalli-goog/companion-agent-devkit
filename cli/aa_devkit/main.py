@@ -197,9 +197,21 @@ def _cmd_generate_scenarios(args: argparse.Namespace) -> int:
 
 
 def _cmd_generate_workflow(args: argparse.Namespace) -> int:
+    client = None
+    if getattr(args, "use_vertex", False):
+        if not args.project:
+            print("Error: --project is required when --use-vertex is enabled.", file=sys.stderr)
+            return 2
+        client = CompanionAgentRestClient(
+            project_id=args.project,
+            location=args.location or "us-central1",
+            quota_project_id=args.quota_project or args.project,
+        )
     wf = generate_workflow_from_spec(
         spec_path=args.spec,
         bundle_dir=args.bundle,
+        client=client,
+        use_vertex=getattr(args, "use_vertex", False),
     )
     output_text = json.dumps(wf, indent=2) + "\n"
     _write_or_print(output_text, args.output)
@@ -569,13 +581,24 @@ def build_parser() -> argparse.ArgumentParser:
     # generate-workflow (Workflow Generator & DAG Normalizer)
     p_gen_wf = subparsers.add_parser(
         "generate-workflow",
-        help="Compile a shorthand SOP/step spec into a DAG-verified Dialogflow v2beta1 CompanionAgentWorkflow JSON.",
+        help="Compile a PDF (.pdf), Markdown/Text (.md/.txt), or JSON SOP spec into a DAG-verified Dialogflow v2beta1 CompanionAgentWorkflow JSON.",
     )
-    p_gen_wf.add_argument("spec", help="Path to shorthand or draft workflow JSON specification.")
+    p_gen_wf.add_argument(
+        "spec",
+        help="Path to SOP document (.pdf, .md, .txt) or shorthand/draft workflow JSON specification.",
+    )
     p_gen_wf.add_argument(
         "--bundle",
         help="Optional exported bundle directory to resolve tool paths and auto-link companionAgentWorkflowSpecs.",
     )
+    p_gen_wf.add_argument(
+        "--use-vertex",
+        action="store_true",
+        help="Optional: send PDF bytes directly to Vertex AI Gemini (application/pdf inlineData) for scanned/flowchart PDFs.",
+    )
+    p_gen_wf.add_argument("--project", help="GCP project ID (when using --use-vertex).")
+    p_gen_wf.add_argument("--location", default="us-central1", help="GCP location for Vertex AI (default: us-central1).")
+    p_gen_wf.add_argument("--quota-project", help="Optional X-Goog-User-Project override.")
     p_gen_wf.add_argument("--output", help="Optional file path to write normalized CompanionAgentWorkflow JSON.")
     p_gen_wf.set_defaults(func=_cmd_generate_workflow)
 

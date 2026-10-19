@@ -1,16 +1,18 @@
 """CompanionAgentWorkflow Generator & DAG Normalizer (`aa-devkit generate-workflow`).
 
-Compiles shorthand SOP/step specifications or draft workflow JSON payloads into
-valid, DAG-verified Dialogflow `v2beta1` `CompanionAgentWorkflow` resources ready
-for `CreateCompanionAgentWorkflow`, `UpdateCompanionAgentWorkflow`, and
-`PublishCompanionAgentWorkflow` (`:publish`):
+Compiles PDF SOP documents (`.pdf`), Markdown/text SOPs (`.md`, `.txt`), or
+shorthand/draft JSON workflow specs (`.json`) into valid, DAG-verified Dialogflow
+`v2beta1` `CompanionAgentWorkflow` resources ready for `CreateCompanionAgentWorkflow`,
+`UpdateCompanionAgentWorkflow`, and `PublishCompanionAgentWorkflow` (`:publish`):
+  - Supports direct `.pdf` input:
+      * **Offline / Deterministic Mode**: Extracts text from PDF streams (`pdftotext` or
+        pure-Python `/FlateDecode` + `Tj`/`TJ` parser) and parses numbered SOP steps into
+        typed `INFORMATION_COLLECTION`, `SYSTEM_ACTION`, `MANUAL_ACTION`,
+        `INFORMATIONAL_MESSAGE`, and `END_WORKFLOW` nodes.
+      * **Vertex AI Multimodal Mode (`--use-vertex`)**: Sends the raw PDF (`application/pdf`)
+        directly to Gemini with the strict `CompanionAgentWorkflow` schema prompt, then
+        validates and normalizes the resulting DAG.
   - Enforces the 63-character `displayName` limit (`companion_agent_workflow.proto`).
-  - Normalizes all 5 `CompanionAgentWorkflowStep.Type` enum values:
-      1. `INFORMATION_COLLECTION`
-      2. `SYSTEM_ACTION`
-      3. `INFORMATIONAL_MESSAGE`
-      4. `MANUAL_ACTION`
-      5. `END_WORKFLOW`
   - Guarantees globally unique `snake_case` variable names across all steps and
     `outputVariableMappings`, with valid `stringType`, `numberType`, `booleanType`,
     or `enumType` oneofs.
@@ -21,10 +23,16 @@ for `CreateCompanionAgentWorkflow`, `UpdateCompanionAgentWorkflow`, and
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
 from typing import Any, Optional
+import zlib
+
+from aa_devkit.client import CompanionAgentRestClient
 
 
 def normalize_workflow_variable(
@@ -585,17 +593,320 @@ def normalize_workflow_payload(
     return out
 
 
+def extract_text_from_pdf_file(pdf_path: str | Path) -> str:
+    """Extracts plain text from a `.pdf` SOP file using `pdftotext` (if installed) or pure-Python PDF stream parsing."""
+    p = Path(pdf_path).expanduser().resolve()
+    raw_bytes = p.read_bytes()
+
+    # 1. Try system `pdftotext` if available for layout-preserving extraction
+    pdftotext_bin = shutil.which("pdftotext")
+    if pdftotext_bin:
+        try:
+            proc = subprocess.run(
+                [pdftotext_bin, "-layout", str(p), "-"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                return proc.stdout.strip()
+        except Exception:
+            pass
+
+    # 2. Pure-Python PDF stream & text operator (`Tj` / `TJ`) extractor
+    extracted_chunks: list[str] = []
+    stream_pattern = re.compile(rb"stream[\r\n]+(.*?)[\r\n]+endstream", re.DOTALL)
+
+    def _decode_pdf_literals(content_bytes: bytes) -> list[str]:
+        text_out: list[str] = []
+        decoded_str = content_bytes.decode("latin-1", errors="ignore")
+        for m in re.finditer(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)\s*Tj|\[((?:[^\[\]]|\([^)]*\))*)\]\s*TJ", decoded_str):
+            if m.group(1) is not None:
+                s = m.group(1)
+            else:
+                # Concatenate parenthesized literals inside TJ array
+                s = "".join(re.findall(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)", m.group(2) or ""))
+            s = (
+                s.replace(r"\(", "(")
+                .replace(r"\)", ")")
+                .replace(r"\n", "\n")
+                .replace(r"\r", "\r")
+                .replace(r"\\", "\\")
+            )
+            if s.strip():
+                text_out.append(s.strip())
+        return text_out
+
+    for sm in stream_pattern.finditer(raw_bytes):
+        raw_stream = sm.group(1)
+        candidates = [raw_stream]
+        try:
+            candidates.insert(0, zlib.decompress(raw_stream))
+        except Exception:
+            pass
+        for cand in candidates:
+            lits = _decode_pdf_literals(cand)
+            if lits:
+                extracted_chunks.extend(lits)
+                break
+
+    if not extracted_chunks:
+        # Fallback: scan top-level uncompressed PDF content
+        extracted_chunks.extend(_decode_pdf_literals(raw_bytes))
+
+    return "\n".join(extracted_chunks).strip()
+
+
+def parse_sop_text_to_workflow_spec(
+    sop_text: str,
+    default_title: str = "SOP Companion Workflow",
+    known_tools: Optional[set[str]] = None,
+) -> dict[str, Any]:
+    """Parses extracted PDF/Markdown SOP text into a structured workflow specification dict."""
+    lines = [ln.strip() for ln in (sop_text or "").splitlines() if ln.strip()]
+    if not lines:
+        raise ValueError("Extracted SOP document text is empty.")
+
+    known_tools_lower = {t.lower(): t for t in (known_tools or set())}
+    title = default_title
+    description = ""
+    raw_steps_text: list[tuple[str, str]] = []
+
+    step_re = re.compile(
+        r"^(?:step\s*(\d+)\s*[:.\-–—]\s*|(\d+)\s*[.)\-–—]\s*)(.+)$",
+        re.IGNORECASE,
+    )
+
+    for idx, line in enumerate(lines):
+        clean_heading = re.sub(r"^#+\s*", "", line).strip()
+        if idx == 0 and not step_re.match(clean_heading):
+            title = clean_heading[:63]
+            continue
+        low = clean_heading.lower()
+        if (
+            low.startswith("trigger:")
+            or low.startswith("when to use:")
+            or low.startswith("purpose:")
+            or low.startswith("entry criteria:")
+        ):
+            description = clean_heading.split(":", 1)[1].strip()
+            continue
+
+        m = step_re.match(clean_heading)
+        if m:
+            step_body = m.group(3).strip()
+            if ":" in step_body:
+                st_title, st_detail = step_body.split(":", 1)
+                raw_steps_text.append((st_title.strip(), st_detail.strip() or st_title.strip()))
+            else:
+                raw_steps_text.append((step_body[:55].strip(), step_body))
+        elif raw_steps_text:
+            # Append continuation line to the current step's detail
+            prev_t, prev_d = raw_steps_text[-1]
+            raw_steps_text[-1] = (prev_t, f"{prev_d} {clean_heading}".strip())
+        elif not description:
+            description = clean_heading
+
+    if not description:
+        description = f"Trigger when the customer requests assistance with {title}."
+
+    if not raw_steps_text:
+        # Treat each non-title line as a sequential step
+        for idx, ln in enumerate(lines[1:], start=1):
+            raw_steps_text.append((f"Step {idx}", ln))
+
+    spec_steps: list[dict[str, Any]] = []
+    for idx, (st_title, st_detail) in enumerate(raw_steps_text, start=1):
+        combined = f"{st_title} {st_detail}"
+        comb_low = combined.lower()
+        step_id = f"step_{idx}_{re.sub(r'[^a-z0-9]+', '_', st_title.lower()).strip('_')[:24]}"
+
+        # Check for explicit tool reference (`{@TOOL:xyz}`, `tool: xyz`, or known bundle tool name)
+        explicit_tool_m = re.search(
+            r"(?:\{@TOOL:([a-zA-Z0-9_/-]+)\}|\b(?:invoke|call|run|execute)\s+`?([a-z][a-z0-9_]{2,})`?)",
+            combined,
+            re.IGNORECASE,
+        )
+        matched_tool = ""
+        if explicit_tool_m:
+            cand = (explicit_tool_m.group(1) or explicit_tool_m.group(2) or "").strip()
+            if cand.lower() not in ("the", "tool", "api", "system", "function", "customer"):
+                matched_tool = known_tools_lower.get(cand.lower(), cand)
+        if not matched_tool:
+            for kt_low, kt_orig in known_tools_lower.items():
+                if kt_low in comb_low:
+                    matched_tool = kt_orig
+                    break
+
+        if any(k in comb_low for k in ("end workflow", "complete workflow", "close workflow")):
+            spec_steps.append(
+                {
+                    "id": "end_workflow",
+                    "title": "End Workflow",
+                    "type": "END_WORKFLOW",
+                }
+            )
+        elif matched_tool:
+            is_mut = any(
+                matched_tool.lower().startswith(p)
+                for p in ("issue_", "refund_", "cancel_", "update_", "create_", "delete_", "waive_", "credit_")
+            ) or ("confirmationrequirement=required" in comb_low.replace(" ", ""))
+            out_var_name = f"{re.sub(r'[^a-z0-9_]', '_', matched_tool.lower())}_status"
+            spec_steps.append(
+                {
+                    "id": step_id,
+                    "title": st_title,
+                    "type": "SYSTEM_ACTION",
+                    "tool": matched_tool,
+                    "confirmationRequirement": "REQUIRED" if is_mut else "NOT_REQUIRED",
+                    "displayDetails": st_detail,
+                    "outputVariableMappings": [
+                        {
+                            "name": out_var_name,
+                            "description": f"Output status from {matched_tool}.",
+                            "fieldPath": "status",
+                        }
+                    ],
+                }
+            )
+        elif any(
+            k in comb_low
+            for k in ("ask ", "collect ", "obtain ", "request from caller", "verify with caller", "ask the caller")
+        ):
+            # Extract backticked or snake_case variable names if present
+            found_vars = re.findall(r"`([a-zA-Z][a-zA-Z0-9_]*)`|\b([a-z]+_[a-z0-9_]+)\b", combined)
+            var_list: list[dict[str, Any]] = []
+            seen_step_vars: set[str] = set()
+            for g1, g2 in found_vars:
+                v_cand = (g1 or g2).strip()
+                v_low = v_cand.lower()
+                if v_cand and v_low not in ("step_type", "end_workflow") and v_low not in seen_step_vars:
+                    seen_step_vars.add(v_low)
+                    var_list.append(
+                        {
+                            "name": v_low,
+                            "description": f"Customer {v_cand.replace('_', ' ')} collected during {st_title}.",
+                            "type": "NUMBER" if "amount" in v_low else "STRING",
+                        }
+                    )
+            if not var_list:
+                var_list.append(
+                    {
+                        "name": f"collected_{idx}_value",
+                        "description": st_detail,
+                        "type": "STRING",
+                    }
+                )
+            spec_steps.append(
+                {
+                    "id": step_id,
+                    "title": st_title,
+                    "type": "INFORMATION_COLLECTION",
+                    "displayDetails": st_detail,
+                    "prompt": st_detail,
+                    "variables": var_list,
+                }
+            )
+        elif any(k in comb_low for k in ("manual", "portal", "external system", "crm tab")):
+            spec_steps.append(
+                {
+                    "id": step_id,
+                    "title": st_title,
+                    "type": "MANUAL_ACTION",
+                    "displayDetails": st_detail,
+                }
+            )
+        else:
+            spec_steps.append(
+                {
+                    "id": step_id,
+                    "title": st_title,
+                    "type": "INFORMATIONAL_MESSAGE",
+                    "displayDetails": st_detail,
+                    "prompt": st_detail,
+                }
+            )
+
+    return {
+        "displayName": title[:63],
+        "description": description,
+        "rootStepId": spec_steps[0]["id"] if spec_steps else "step_1",
+        "steps": spec_steps,
+    }
+
+
+def _generate_workflow_from_pdf_via_vertex(
+    pdf_path: Path,
+    client: CompanionAgentRestClient,
+    known_tools: set[str],
+) -> Optional[dict[str, Any]]:
+    """Uses Vertex AI Gemini multimodal (`application/pdf`) to convert a PDF SOP into a workflow spec."""
+    try:
+        pdf_b64 = base64.b64encode(pdf_path.read_bytes()).decode("ascii")
+        tools_hint = (
+            f"Available tools in bundle: {sorted(known_tools)}"
+            if known_tools
+            else "Infer appropriate snake_case tool names for any system/API steps."
+        )
+        prompt = (
+            "You are the Google Cloud Companion Agent Workflow Architect.\n"
+            "Convert the attached SOP PDF document into a Dialogflow v2beta1 CompanionAgentWorkflow JSON object.\n"
+            "Rules:\n"
+            "1. `displayName` must be <= 63 characters.\n"
+            "2. `description` must state positive customer-intent trigger criteria.\n"
+            "3. `steps` must use `type` values from: INFORMATION_COLLECTION, SYSTEM_ACTION, "
+            "INFORMATIONAL_MESSAGE, MANUAL_ACTION, END_WORKFLOW.\n"
+            "4. Every path must terminate at an END_WORKFLOW step with no cycles and no orphan steps.\n"
+            f"5. {tools_hint}\n"
+            "Return ONLY valid JSON."
+        )
+        url = (
+            f"https://{client.location}-aiplatform.googleapis.com/v1/projects/{client.project_id}"
+            f"/locations/{client.location}/publishers/google/models/gemini-2.5-flash:generateContent"
+        )
+        resp = client.request(
+            "POST",
+            url,
+            json_body={
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {"inlineData": {"mimeType": "application/pdf", "data": pdf_b64}},
+                            {"text": prompt},
+                        ],
+                    }
+                ],
+                "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
+            },
+        )
+        cand_text = (
+            (((resp.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [{}])[0].get("text")
+            or ""
+        )
+        parsed = json.loads(cand_text)
+        if isinstance(parsed, dict):
+            return parsed.get("workflow") if isinstance(parsed.get("workflow"), dict) else parsed
+    except Exception:
+        pass
+    return None
+
+
 def generate_workflow_from_spec(
     spec_path: str | Path,
     bundle_dir: Optional[str | Path] = None,
+    client: Optional[CompanionAgentRestClient] = None,
+    use_vertex: bool = False,
 ) -> dict[str, Any]:
-    """Loads a shorthand or draft workflow JSON file, compiles a DAG-verified v2beta1 workflow,
-    and optionally links it into an exported bundle directory (`workflows/` + `companion_agent.json`).
+    """Loads a `.pdf` SOP document, `.md`/`.txt` SOP, or `.json` workflow spec, compiles a
+    DAG-verified `v2beta1` `CompanionAgentWorkflow`, and optionally links it into `--bundle`.
     """
-    raw_spec = json.loads(Path(spec_path).expanduser().resolve().read_text(encoding="utf-8"))
-    wf_input = raw_spec.get("workflow") if isinstance(raw_spec.get("workflow"), dict) else raw_spec
+    p = Path(spec_path).expanduser().resolve()
+    suffix = p.suffix.lower()
 
     tool_path_map: dict[str, str] = {}
+    known_tools: set[str] = set()
     project_id = "sample-proj"
     location = "global"
 
@@ -612,12 +923,40 @@ def generate_workflow_from_spec(
                 t_data = json.loads(tf.read_text(encoding="utf-8"))
                 t_name = t_data.get("name") or ""
                 t_short = t_data.get("displayName") or t_data.get("shortName") or tf.stem
+                if t_short:
+                    known_tools.add(t_short)
                 if t_name and t_short:
                     tool_path_map[t_short] = t_name
                     tool_path_map[t_short.lower()] = t_name
 
+    wf_input: Optional[dict[str, Any]] = None
+    if suffix == ".pdf":
+        if use_vertex and client is not None:
+            wf_input = _generate_workflow_from_pdf_via_vertex(p, client, known_tools)
+        if wf_input is None:
+            sop_text = extract_text_from_pdf_file(p)
+            wf_input = parse_sop_text_to_workflow_spec(
+                sop_text,
+                default_title=p.stem.replace("_", " ").title(),
+                known_tools=known_tools,
+            )
+    elif suffix in (".md", ".txt"):
+        sop_text = p.read_text(encoding="utf-8")
+        wf_input = parse_sop_text_to_workflow_spec(
+            sop_text,
+            default_title=p.stem.replace("_", " ").title(),
+            known_tools=known_tools,
+        )
+    else:
+        raw_spec = json.loads(p.read_text(encoding="utf-8"))
+        wf_input = (
+            raw_spec.get("workflow") if isinstance(raw_spec.get("workflow"), dict) else raw_spec
+        )
+
     normalized_wf = normalize_workflow_payload(wf_input, tool_path_map=tool_path_map)
-    wf_slug = re.sub(r"[^a-z0-9_-]", "-", normalized_wf["displayName"].lower()).strip("-") or "workflow"
+    wf_slug = (
+        re.sub(r"[^a-z0-9]+", "-", normalized_wf["displayName"].lower()).strip("-") or "workflow"
+    )
     if "name" not in normalized_wf:
         normalized_wf["name"] = (
             f"projects/{project_id}/locations/{location}/companionAgentWorkflows/{wf_slug}"

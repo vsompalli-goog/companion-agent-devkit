@@ -44,6 +44,7 @@ from aa_devkit.voice_tester import (
     synthesize_transcript_audio,
 )
 from aa_devkit.workflow_generator import (
+    extract_text_from_pdf_file,
     generate_workflow_from_spec,
     normalize_workflow_payload,
 )
@@ -412,4 +413,50 @@ def test_workflow_generator_and_dag_normalizer() -> None:
     end_step = next(s for s in healed_wf["steps"] if s["type"] == "END_WORKFLOW")
     assert "actions" not in end_step
     assert "transitions" not in end_step
+
+
+def test_pdf_sop_workflow_generation(tmp_path: Path) -> None:
+    """Verifies generating a DAG-verified CompanionAgentWorkflow directly from a PDF SOP document (.pdf)."""
+    import shutil
+
+    pdf_path = REPO_ROOT / "evals" / "samples" / "sample_billing_dispute_sop.pdf"
+    extracted_text = extract_text_from_pdf_file(pdf_path)
+    assert "Billing Dispute & Refund SOP" in extracted_text
+    assert "lookup_order" in extracted_text
+    assert "issue_refund" in extracted_text
+
+    tmp_bundle = tmp_path / "bundle_pdf_test"
+    shutil.copytree(REPO_ROOT / "evals" / "samples" / "sample_agent_bundle", tmp_bundle)
+
+    pdf_wf_out = tmp_path / "pdf_workflow.json"
+    rc = main(
+        [
+            "generate-workflow",
+            str(pdf_path),
+            "--bundle",
+            str(tmp_bundle),
+            "--output",
+            str(pdf_wf_out),
+        ]
+    )
+    assert rc == 0
+    wf = json.loads(pdf_wf_out.read_text(encoding="utf-8"))
+    assert wf["displayName"] == "Billing Dispute & Refund SOP"
+    assert "disputes a charge" in wf["description"]
+    step_types = [s["type"] for s in wf["steps"]]
+    assert step_types == [
+        "INFORMATION_COLLECTION",
+        "SYSTEM_ACTION",
+        "SYSTEM_ACTION",
+        "INFORMATIONAL_MESSAGE",
+        "END_WORKFLOW",
+    ]
+    # Verify deduplicated variables in Step 1
+    step1_vars = wf["steps"][0]["actions"][0]["humanAgentAction"]["informationCollectionAction"]["variables"]
+    assert [v["name"] for v in step1_vars] == ["order_id", "disputed_amount"]
+    # Verify mutating tool issue_refund has confirmationRequirement == REQUIRED
+    step3_sys = wf["steps"][2]["actions"][0]["systemAction"]
+    assert step3_sys["cesToolSpec"]["confirmationRequirement"] == "REQUIRED"
+    assert step3_sys["cesToolSpec"]["cesTool"].endswith("/tools/issue_refund")
+
 

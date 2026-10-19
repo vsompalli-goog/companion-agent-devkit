@@ -42,15 +42,20 @@ aa-devkit install-pack --target claude --dest /path/to/customer-workspace
 aa-devkit eval-skills
 ```
 
-### 3. Generate Workflows & Migrate Legacy AI Coach / PGKA Configs (`FR-1.3`, `FR-1.4`)
+### 3. Generate Workflows (from PDF SOPs or Specs) & Migrate Legacy AI Coach / PGKA Configs (`FR-1.3`, `FR-1.4`)
 
 ```bash
-# Compile a shorthand SOP/step spec into a DAG-verified Dialogflow v2beta1 CompanionAgentWorkflow JSON
+# 1. Generate a DAG-verified CompanionAgentWorkflow directly from a PDF SOP document (.pdf)
+aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
+  --bundle evals/samples/sample_agent_bundle \
+  --output ./generated_billing_dispute_workflow.json
+
+# 2. Or compile a shorthand JSON SOP/step spec into a DAG-verified CompanionAgentWorkflow JSON
 aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
   --bundle evals/samples/sample_agent_bundle \
   --output ./generated_damaged_item_workflow.json
 
-# Migrate legacy AI Coach / PGKA Generator JSON into Companion Agent JSON
+# 3. Migrate legacy AI Coach / PGKA Generator JSON into Companion Agent JSON
 aa-devkit migrate-coach ./legacy_ai_coach_generator.json --output ./migrated_companion_agent.json
 ```
 
@@ -152,6 +157,7 @@ companion-agent-devkit/
 │       ├── sample_eval_conversations.json
 │       ├── sample_genesys_transcript.json
 │       ├── sample_call_log.txt
+│       ├── sample_billing_dispute_sop.pdf
 │       ├── sample_workflow_sop_spec.json
 │       └── sample_agent_bundle/       # Ready-to-run exported Companion Agent bundle
 ├── pack/                      # Single source of truth for rules, skills, guides & samples

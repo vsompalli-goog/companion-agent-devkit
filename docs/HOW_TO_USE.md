@@ -74,17 +74,24 @@ The agent will load `pack/skills/aa-workflow-generator/SKILL.md` and `references
 - Globally unique `snake_case` variable names across all `INFORMATION_COLLECTION` and `SYSTEM_ACTION` (`outputVariableMappings`) steps.
 - A cycle-free, 100% reachable DAG from `rootStepId` to `END_WORKFLOW` (with no `actions` or `transitions` on `END_WORKFLOW`).
 
-#### Option B: Using the `aa-devkit generate-workflow` CLI Compiler
-Compile a shorthand SOP/step JSON specification (such as the included `evals/samples/sample_workflow_sop_spec.json`) into a `:publish`-ready `v2beta1` `CompanionAgentWorkflow` JSON:
+#### Option B: Using the `aa-devkit generate-workflow` CLI Compiler (`.pdf`, `.md`, `.txt`, or `.json`)
+Compile a **PDF SOP document (`.pdf`)**, a **Markdown/Text SOP (`.md`/`.txt`)**, or a **shorthand JSON specification (`.json`)** directly into a `:publish`-ready `v2beta1` `CompanionAgentWorkflow` JSON:
 
 ```bash
-# 1. Compile shorthand SOP spec to a standalone DAG-verified CompanionAgentWorkflow JSON
-aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
-  --output /tmp/damaged_item_workflow.json
-
-# 2. Or pass --bundle to resolve tool resource paths from tools/*.json and auto-link
-#    companionAgentWorkflowSpecs in companion_agent.json:
+# 1. Generate a DAG-verified CompanionAgentWorkflow directly from a PDF SOP document (.pdf)
 cp -r evals/samples/sample_agent_bundle /tmp/my_bundle_copy
+aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
+  --bundle /tmp/my_bundle_copy \
+  --output /tmp/my_bundle_copy/workflows/billing_dispute_sop.json
+
+# 2. (Optional) Pass --use-vertex --project <gcp-project> to send scanned/flowchart PDFs
+#    directly to Vertex AI Gemini multimodal (application/pdf inlineData)
+aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
+  --bundle /tmp/my_bundle_copy \
+  --use-vertex --project my-gcp-project \
+  --output /tmp/my_bundle_copy/workflows/billing_dispute_sop.json
+
+# 3. Compile a shorthand JSON SOP spec (with conditional branching transitions)
 aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
   --bundle /tmp/my_bundle_copy \
   --output /tmp/my_bundle_copy/workflows/damaged_item_workflow.json
