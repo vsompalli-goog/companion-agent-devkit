@@ -74,29 +74,35 @@ The agent will load `pack/skills/aa-workflow-generator/SKILL.md` and `references
 - Globally unique `snake_case` variable names across all `INFORMATION_COLLECTION` and `SYSTEM_ACTION` (`outputVariableMappings`) steps.
 - A cycle-free, 100% reachable DAG from `rootStepId` to `END_WORKFLOW` (with no `actions` or `transitions` on `END_WORKFLOW`).
 
-#### Option B: Using the `aa-devkit generate-workflow` CLI Compiler (`.pdf`, `.md`, `.txt`, or `.json`)
-Compile a **PDF SOP document (`.pdf`)**, a **Markdown/Text SOP (`.md`/`.txt`)**, or a **shorthand JSON specification (`.json`)** directly into a `:publish`-ready `v2beta1` `CompanionAgentWorkflow` JSON:
+#### Option B: Using the `aa-devkit generate-workflow` CLI Compiler (`.pdf`, `--prompt`, `.md`, `.txt`, or `.json`)
+Compile a **PDF SOP document (`.pdf`)**, a **natural-language `--prompt`**, a **Markdown/Text SOP (`.md`/`.txt`)**, or a **shorthand JSON specification (`.json`)** directly into a `:publish`-ready `v2beta1` `CompanionAgentWorkflow` JSON:
 
 ```bash
-# 1. Generate a DAG-verified CompanionAgentWorkflow directly from a PDF SOP document (.pdf)
+# 1. Offline: Generate a DAG-verified CompanionAgentWorkflow directly from a PDF SOP document (.pdf)
 cp -r evals/samples/sample_agent_bundle /tmp/my_bundle_copy
 aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
   --bundle /tmp/my_bundle_copy \
   --output /tmp/my_bundle_copy/workflows/billing_dispute_sop.json
 
-# 2. (Optional) Pass --use-vertex --project <gcp-project> and an optional --prompt to send
-#    scanned/flowchart PDFs + custom instructions directly to Vertex AI Gemini
+# 2. Vertex Mode (PDF + Custom --prompt): Send a PDF document + custom instructions to Vertex AI Gemini
 aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
+  --use-vertex \
+  --project my-gcp-project \
   --bundle /tmp/my_bundle_copy \
-  --use-vertex --project my-gcp-project \
-  --prompt "Focus on the refund flow and require confirmationRequirement=REQUIRED on issue_refund." \
+  --prompt "Focus on the refund steps on page 1 and require confirmationRequirement=REQUIRED before calling issue_refund." \
   --output /tmp/my_bundle_copy/workflows/billing_dispute_sop.json
 
-# 3. Or generate a workflow purely from a natural-language --prompt (no input file required)
+# 3. Standalone --prompt Only (No Input File Needed): Generate a workflow directly from a text prompt
 aa-devkit generate-workflow \
-  --use-vertex --project my-gcp-project \
+  --use-vertex \
+  --project my-gcp-project \
   --bundle /tmp/my_bundle_copy \
-  --prompt "Create a 4-step Billing Dispute SOP: Step 1 ask for order_id and disputed_amount, Step 2 invoke lookup_order, Step 3 invoke issue_refund, Step 4 inform caller." \
+  --prompt "Create a 4-step Billing Dispute SOP:
+    Trigger: Trigger when a customer disputes a charge or requests a refund.
+    Step 1: Ask the caller for their order_id and disputed_amount.
+    Step 2: Invoke lookup_order to check the 30-day return window.
+    Step 3: Invoke issue_refund with confirmationRequirement=REQUIRED.
+    Step 4: Inform the caller that their refund confirmation email has been sent." \
   --output /tmp/my_bundle_copy/workflows/billing_dispute_prompt.json
 
 # 4. Compile a shorthand JSON SOP spec (with conditional branching transitions)
@@ -104,6 +110,13 @@ aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
   --bundle /tmp/my_bundle_copy \
   --output /tmp/my_bundle_copy/workflows/damaged_item_workflow.json
 ```
+
+> **What `--bundle <path>` does (and why it is optional)**:
+> - Resolves short tool names (`lookup_order`, `issue_refund`) against `<bundle>/tools/*.json` into full `cesTool` resource paths (`projects/<proj>/locations/<loc>/tools/<id>`).
+> - Infers `projectId` and `location` from `<bundle>/manifest.json`.
+> - Writes the generated workflow into `<bundle>/workflows/<slug>.json` and appends it to `companionAgentWorkflowSpecs[]` in `<bundle>/companion_agent.json`.
+> - If you omit `--bundle`, `aa-devkit generate-workflow` outputs a standalone workflow JSON file without modifying any bundle.
+> - `--prompt` also works in offline mode without `--use-vertex` if your prompt uses `Trigger:` and `Step 1:` / `1.` numbering.
 
 ### 2.3 Migrate Legacy AI Coach & PGKA Configurations (`FR-1.3`)
 

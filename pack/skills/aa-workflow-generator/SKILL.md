@@ -30,18 +30,25 @@ aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
   --bundle evals/samples/sample_agent_bundle \
   --output ./generated_pdf_workflow.json
 
-# 2. (Optional) Use Vertex AI Gemini multimodal (application/pdf inlineData) + a custom --prompt
+# 2. Vertex Mode (PDF + Custom --prompt): Send a PDF document + custom instructions to Vertex AI Gemini
 aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
+  --use-vertex \
+  --project my-gcp-project \
   --bundle evals/samples/sample_agent_bundle \
-  --use-vertex --project my-gcp-project \
-  --prompt "Focus on the refund steps and require agent confirmation before calling issue_refund." \
+  --prompt "Focus on the refund steps on page 1 and require confirmationRequirement=REQUIRED before calling issue_refund." \
   --output ./generated_pdf_workflow.json
 
-# 3. Or generate a workflow purely from a natural-language --prompt (no file required)
+# 3. Standalone --prompt Only (No Input File Needed): Generate a workflow directly from a text prompt
 aa-devkit generate-workflow \
-  --use-vertex --project my-gcp-project \
+  --use-vertex \
+  --project my-gcp-project \
   --bundle evals/samples/sample_agent_bundle \
-  --prompt "Create a 4-step Billing Dispute workflow: 1. Ask for order_id and disputed_amount. 2. Call lookup_order. 3. Call issue_refund with confirmationRequirement=REQUIRED. 4. Inform caller of refund confirmation." \
+  --prompt "Create a 4-step Billing Dispute SOP:
+    Trigger: Trigger when a customer disputes a charge or requests a refund.
+    Step 1: Ask the caller for their order_id and disputed_amount.
+    Step 2: Invoke lookup_order to check the 30-day return window.
+    Step 3: Invoke issue_refund with confirmationRequirement=REQUIRED.
+    Step 4: Inform the caller that their refund confirmation email has been sent." \
   --output ./generated_prompt_workflow.json
 
 # 4. Compile a shorthand JSON workflow spec into a DAG-verified v2beta1 CompanionAgentWorkflow JSON
@@ -49,6 +56,8 @@ aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
   --bundle evals/samples/sample_agent_bundle \
   --output ./generated_workflow.json
 ```
+
+*(Note: `--prompt` also works in offline mode without `--use-vertex` if your prompt uses `Trigger:` and `Step 1:` / `1.` numbering. Passing `--bundle <path>` is optional and automatically resolves short tool names to full `cesTool` resource paths, infers `projectId`/`location` from `manifest.json`, writes the workflow into `<bundle>/workflows/`, and links it into `companion_agent.json`.)*
 
 ## Mandatory Workflow Generation Checklist
 
