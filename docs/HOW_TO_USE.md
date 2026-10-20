@@ -84,14 +84,22 @@ aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
   --bundle /tmp/my_bundle_copy \
   --output /tmp/my_bundle_copy/workflows/billing_dispute_sop.json
 
-# 2. (Optional) Pass --use-vertex --project <gcp-project> to send scanned/flowchart PDFs
-#    directly to Vertex AI Gemini multimodal (application/pdf inlineData)
+# 2. (Optional) Pass --use-vertex --project <gcp-project> and an optional --prompt to send
+#    scanned/flowchart PDFs + custom instructions directly to Vertex AI Gemini
 aa-devkit generate-workflow evals/samples/sample_billing_dispute_sop.pdf \
   --bundle /tmp/my_bundle_copy \
   --use-vertex --project my-gcp-project \
+  --prompt "Focus on the refund flow and require confirmationRequirement=REQUIRED on issue_refund." \
   --output /tmp/my_bundle_copy/workflows/billing_dispute_sop.json
 
-# 3. Compile a shorthand JSON SOP spec (with conditional branching transitions)
+# 3. Or generate a workflow purely from a natural-language --prompt (no input file required)
+aa-devkit generate-workflow \
+  --use-vertex --project my-gcp-project \
+  --bundle /tmp/my_bundle_copy \
+  --prompt "Create a 4-step Billing Dispute SOP: Step 1 ask for order_id and disputed_amount, Step 2 invoke lookup_order, Step 3 invoke issue_refund, Step 4 inform caller." \
+  --output /tmp/my_bundle_copy/workflows/billing_dispute_prompt.json
+
+# 4. Compile a shorthand JSON SOP spec (with conditional branching transitions)
 aa-devkit generate-workflow evals/samples/sample_workflow_sop_spec.json \
   --bundle /tmp/my_bundle_copy \
   --output /tmp/my_bundle_copy/workflows/damaged_item_workflow.json

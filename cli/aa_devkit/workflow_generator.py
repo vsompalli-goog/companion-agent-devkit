@@ -836,22 +836,33 @@ def parse_sop_text_to_workflow_spec(
     }
 
 
-def _generate_workflow_from_pdf_via_vertex(
-    pdf_path: Path,
+def _generate_workflow_via_vertex(
     client: CompanionAgentRestClient,
     known_tools: set[str],
+    pdf_path: Optional[Path] = None,
+    sop_text: Optional[str] = None,
+    user_prompt: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
-    """Uses Vertex AI Gemini multimodal (`application/pdf`) to convert a PDF SOP into a workflow spec."""
+    """Uses Vertex AI Gemini (`gemini-2.5-flash`) to convert a PDF SOP, text SOP, and/or user `--prompt` into a workflow spec."""
     try:
-        pdf_b64 = base64.b64encode(pdf_path.read_bytes()).decode("ascii")
         tools_hint = (
             f"Available tools in bundle: {sorted(known_tools)}"
             if known_tools
             else "Infer appropriate snake_case tool names for any system/API steps."
         )
+        custom_directive = (
+            f"\nAdditional User Prompt / Instructions:\n{user_prompt.strip()}\n"
+            if user_prompt and user_prompt.strip()
+            else ""
+        )
+        sop_context = (
+            f"\nSource SOP Text:\n{sop_text.strip()}\n"
+            if sop_text and sop_text.strip()
+            else ""
+        )
         prompt = (
             "You are the Google Cloud Companion Agent Workflow Architect.\n"
-            "Convert the attached SOP PDF document into a Dialogflow v2beta1 CompanionAgentWorkflow JSON object.\n"
+            "Generate a Dialogflow v2beta1 CompanionAgentWorkflow JSON object from the provided input.\n"
             "Rules:\n"
             "1. `displayName` must be <= 63 characters.\n"
             "2. `description` must state positive customer-intent trigger criteria.\n"
@@ -859,8 +870,16 @@ def _generate_workflow_from_pdf_via_vertex(
             "INFORMATIONAL_MESSAGE, MANUAL_ACTION, END_WORKFLOW.\n"
             "4. Every path must terminate at an END_WORKFLOW step with no cycles and no orphan steps.\n"
             f"5. {tools_hint}\n"
+            f"{sop_context}"
+            f"{custom_directive}"
             "Return ONLY valid JSON."
         )
+        parts: list[dict[str, Any]] = []
+        if pdf_path is not None and pdf_path.is_file():
+            pdf_b64 = base64.b64encode(pdf_path.read_bytes()).decode("ascii")
+            parts.append({"inlineData": {"mimeType": "application/pdf", "data": pdf_b64}})
+        parts.append({"text": prompt})
+
         url = (
             f"https://{client.location}-aiplatform.googleapis.com/v1/projects/{client.project_id}"
             f"/locations/{client.location}/publishers/google/models/gemini-2.5-flash:generateContent"
@@ -872,10 +891,7 @@ def _generate_workflow_from_pdf_via_vertex(
                 "contents": [
                     {
                         "role": "user",
-                        "parts": [
-                            {"inlineData": {"mimeType": "application/pdf", "data": pdf_b64}},
-                            {"text": prompt},
-                        ],
+                        "parts": parts,
                     }
                 ],
                 "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
@@ -894,16 +910,20 @@ def _generate_workflow_from_pdf_via_vertex(
 
 
 def generate_workflow_from_spec(
-    spec_path: str | Path,
+    spec_path: Optional[str | Path] = None,
     bundle_dir: Optional[str | Path] = None,
     client: Optional[CompanionAgentRestClient] = None,
     use_vertex: bool = False,
+    user_prompt: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Loads a `.pdf` SOP document, `.md`/`.txt` SOP, or `.json` workflow spec, compiles a
-    DAG-verified `v2beta1` `CompanionAgentWorkflow`, and optionally links it into `--bundle`.
+    """Loads a `.pdf` SOP document, `.md`/`.txt` SOP, `.json` workflow spec, and/or `--prompt` text,
+    compiles a DAG-verified `v2beta1` `CompanionAgentWorkflow`, and optionally links it into `--bundle`.
     """
-    p = Path(spec_path).expanduser().resolve()
-    suffix = p.suffix.lower()
+    if not spec_path and not (user_prompt and user_prompt.strip()):
+        raise ValueError("Either a `spec` file path (.pdf, .md, .txt, .json) or `--prompt` must be provided.")
+
+    p = Path(spec_path).expanduser().resolve() if spec_path else None
+    suffix = p.suffix.lower() if p else ""
 
     tool_path_map: dict[str, str] = {}
     known_tools: set[str] = set()
@@ -930,11 +950,32 @@ def generate_workflow_from_spec(
                     tool_path_map[t_short.lower()] = t_name
 
     wf_input: Optional[dict[str, Any]] = None
-    if suffix == ".pdf":
+    if p is None:
+        # Prompt-only mode (no file path provided)
         if use_vertex and client is not None:
-            wf_input = _generate_workflow_from_pdf_via_vertex(p, client, known_tools)
+            wf_input = _generate_workflow_via_vertex(
+                client=client,
+                known_tools=known_tools,
+                user_prompt=user_prompt,
+            )
+        if wf_input is None:
+            wf_input = parse_sop_text_to_workflow_spec(
+                user_prompt or "",
+                default_title="Custom Prompt Workflow",
+                known_tools=known_tools,
+            )
+    elif suffix == ".pdf":
+        if use_vertex and client is not None:
+            wf_input = _generate_workflow_via_vertex(
+                client=client,
+                known_tools=known_tools,
+                pdf_path=p,
+                user_prompt=user_prompt,
+            )
         if wf_input is None:
             sop_text = extract_text_from_pdf_file(p)
+            if user_prompt and user_prompt.strip():
+                sop_text = f"{sop_text}\n{user_prompt.strip()}"
             wf_input = parse_sop_text_to_workflow_spec(
                 sop_text,
                 default_title=p.stem.replace("_", " ").title(),
@@ -942,11 +983,21 @@ def generate_workflow_from_spec(
             )
     elif suffix in (".md", ".txt"):
         sop_text = p.read_text(encoding="utf-8")
-        wf_input = parse_sop_text_to_workflow_spec(
-            sop_text,
-            default_title=p.stem.replace("_", " ").title(),
-            known_tools=known_tools,
-        )
+        if use_vertex and client is not None:
+            wf_input = _generate_workflow_via_vertex(
+                client=client,
+                known_tools=known_tools,
+                sop_text=sop_text,
+                user_prompt=user_prompt,
+            )
+        if wf_input is None:
+            if user_prompt and user_prompt.strip():
+                sop_text = f"{sop_text}\n{user_prompt.strip()}"
+            wf_input = parse_sop_text_to_workflow_spec(
+                sop_text,
+                default_title=p.stem.replace("_", " ").title(),
+                known_tools=known_tools,
+            )
     else:
         raw_spec = json.loads(p.read_text(encoding="utf-8"))
         wf_input = (

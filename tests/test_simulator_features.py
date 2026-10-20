@@ -459,4 +459,34 @@ def test_pdf_sop_workflow_generation(tmp_path: Path) -> None:
     assert step3_sys["cesToolSpec"]["confirmationRequirement"] == "REQUIRED"
     assert step3_sys["cesToolSpec"]["cesTool"].endswith("/tools/issue_refund")
 
+    # Verify standalone --prompt mode without a file path
+    prompt_wf_out = tmp_path / "prompt_workflow.json"
+    rc_prompt = main(
+        [
+            "generate-workflow",
+            "--prompt",
+            (
+                "# Expedited Replacement SOP\n"
+                "Trigger: Trigger when a customer requests an urgent replacement.\n"
+                "Step 1: Ask the caller for their order_id.\n"
+                "Step 2: Invoke lookup_order to check shipping address.\n"
+                "Step 3: Inform the caller that overnight shipping has been scheduled."
+            ),
+            "--bundle",
+            str(tmp_bundle),
+            "--output",
+            str(prompt_wf_out),
+        ]
+    )
+    assert rc_prompt == 0
+    prompt_wf = json.loads(prompt_wf_out.read_text(encoding="utf-8"))
+    assert prompt_wf["displayName"] == "Expedited Replacement SOP"
+    assert [s["type"] for s in prompt_wf["steps"]] == [
+        "INFORMATION_COLLECTION",
+        "SYSTEM_ACTION",
+        "INFORMATIONAL_MESSAGE",
+        "END_WORKFLOW",
+    ]
+
+
 
